@@ -1,12 +1,17 @@
 package chav1961.nanohttp.server;
 
 
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executors;
 
 import chav1961.nanohttp.server.interfaces.NanoService;
+import chav1961.nanohttp.server.parser.AnnotationParser;
+import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
@@ -20,6 +25,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	private final HttpServer			server;
 	private final boolean				useHttps;
 	private final FileSystemInterface	fsi;
+	private final Map<String,Object>	deployed = new HashMap<>(); 
 	private volatile boolean			isStarted = false;	
 	private volatile boolean			isSuspended = false;	
 	
@@ -115,13 +121,33 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	@Override
 	public void deploy(String path, Object instance2deploy) throws IOException, ContentException, SyntaxException {
 		// TODO Auto-generated method stub
-		
+		if (Utils.checkEmptyOrNullString(path)) {
+			throw new IllegalArgumentException("Path to deploy can't be null or empty");
+		}
+		else if (instance2deploy == null) {
+			throw new NullPointerException("Instance to deploy can't be null");
+		}
+		else if (deployed.containsKey(path)) {
+			throw new IllegalStateException("Path to deploy [] already has deployed instance. Call undeploy() before");
+		}
+		else if (instance2deploy instanceof FileSystemInterface) {
+			getServiceRoot().open(path).mount((FileSystemInterface)instance2deploy);
+			deployed.put(path, instance2deploy);
+		}
+		else {
+			deployed.put(path, new AnnotationParser(instance2deploy));
+		}
 	}
 
 	@Override
 	public Object undeploy(String path) throws IOException {
 		// TODO Auto-generated method stub
-		return null;
+		if (Utils.checkEmptyOrNullString(path)) {
+			throw new IllegalArgumentException("Path to deploy can't be null or empty");
+		}
+		else {
+			return null;
+		}
 	}
 
 	@Override
@@ -140,5 +166,6 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 
 	private void processRequest(final HttpExchange e) {
 		// TODO Auto-generated method stub
+		
 	}
 }
