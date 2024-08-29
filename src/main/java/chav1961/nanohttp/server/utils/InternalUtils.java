@@ -66,8 +66,6 @@ import org.xml.sax.SAXException;
 
 import com.sun.net.httpserver.Headers;
 
-import chav1961.nanohttp.serverold.MimetypesFileTypeMap;
-import chav1961.nanohttp.serverold.NanoServiceFactory;
 import chav1961.purelib.basic.CharUtils;
 import chav1961.purelib.basic.MimeType;
 import chav1961.purelib.basic.PureLibSettings;
@@ -89,7 +87,6 @@ import chav1961.purelib.streams.interfaces.CharacterTarget;
  * @last.update 0.0.3
  */ 
 public class InternalUtils {
-	private static final MimetypesFileTypeMap	typeMap = new MimetypesFileTypeMap();
 	private static final char[]					TRUE = "true".toCharArray();
 	private static final char[]					FALSE = "false".toCharArray();
 	private static final MimeType[]				NULL_MIME = new MimeType[0];
@@ -190,22 +187,19 @@ public class InternalUtils {
 			throw new IllegalArgumentException("File name to define MIME for can't be null or empty");
 		}
 		else if (fileName.endsWith(".cre")) {
-			return new MimeType[]{PureLibSettings.MIME_CREOLE_TEXT};
+			return new MimeType[]{MimeType.MIME_CREOLE_TEXT};
 		}
 		else if (fileName.endsWith(".css")) {
-			return new MimeType[]{PureLibSettings.MIME_CSS_TEXT};
+			return new MimeType[]{MimeType.MIME_CSS_TEXT};
 		}
 		else if (fileName.endsWith(".html")) {
-			return new MimeType[]{PureLibSettings.MIME_HTML_TEXT};
+			return new MimeType[]{MimeType.MIME_HTML_TEXT};
 		}
 		else if (fileName.contains("favicon.ico")) {
-			return new MimeType[]{PureLibSettings.MIME_FAVICON};
+			return new MimeType[]{MimeType.MIME_FAVICON};
 		}
 		else {
-			try{return MimeType.parseMimeList(typeMap.getContentType(fileName));
-			} catch (MimeParseException e) {
-				return new MimeType[]{PureLibSettings.MIME_OCTET_STREAM};
-			}
+			return new MimeType[]{MimeType.MIME_OCTET_STREAM};
 		}
 	}
 

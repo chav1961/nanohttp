@@ -2,7 +2,6 @@ package chav1961.nanohttp.server;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.KeyStore;
@@ -12,19 +11,16 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
-import chav1961.nanohttp.server.https.SSLUtils;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.Utils;
-import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpsServer;
 
 public class NanoServiceBuilder {
 	private int		port = 8080;
-	private URI		root = URI.create("./");
+	private URI		root = URI.create("fsys:file:./root");
 	private boolean	localhostOnly = Boolean.valueOf(Constants.DEFAULT_NANOSERVICE_LOCALHOST_ONLY);
 	private int		executorPoolSize = Integer.valueOf(Constants.DEFAULT_NANOSERVICE_EXECUTOR_POOL_SIZE);
 	private boolean	disableLoopback = Boolean.valueOf(Constants.DEFAULT_NANOSERVICE_DISABLE_LOOPBACK);
-	private int		temporaryCacheSize = Integer.valueOf(Constants.DEFAULT_NANOSERVICE_EXECUTOR_POOL_SIZE);
+	private int		temporaryCacheSize = 0;
 	private URI		creolePrologueURI = null;
 	private URI		creoleEpilogueURI = null;
 	private boolean	useSSL = false;
@@ -257,7 +253,7 @@ public class NanoServiceBuilder {
 		return new NanoServiceWrapper(this);
 	}
 	
-	InetSocketAddress buildSocketAddress() {
+	InetSocketAddress getSocketAddress() {
 		return new InetSocketAddress(port);
 	}
 
