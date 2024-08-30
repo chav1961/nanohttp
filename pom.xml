@@ -56,7 +56,7 @@
 		<dependency>
 		    <groupId>com.google.code.gson</groupId>
 		    <artifactId>gson</artifactId>
-		    <version>2.11.0</version>
+		    <version>2.10.1</version>
 		</dependency>
 	</dependencies>
 
@@ -69,7 +69,7 @@
 	</distributionManagement>
     
 	<build>
-		<finalName>creolenotepad</finalName>
+		<finalName>nanohttp</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

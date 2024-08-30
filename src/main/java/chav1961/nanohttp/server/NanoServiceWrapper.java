@@ -2,11 +2,13 @@ package chav1961.nanohttp.server;
 
 
 
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLConnection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,10 +28,10 @@ import com.sun.net.httpserver.HttpsServer;
 import chav1961.nanohttp.server.interfaces.NanoContentEncoder;
 import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.nanohttp.server.parser.AnnotationParser;
-import chav1961.nanohttp.server.utils.InternalUtils;
 import chav1961.purelib.basic.MimeType;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.ContentException;
+import chav1961.purelib.basic.exceptions.MimeParseException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
@@ -52,6 +54,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 															};
 	private static final String			ACCEPT_ENCODING = "Accept-Encoding";
 	private static final String			CONTENT_ENCODING = "Content-Encoding";
+	private static final MimeType[]		EMPTY_MIMES = new MimeType[0];
 	
 	private final HttpServer			server;
 	private final boolean				useHttps;
@@ -247,7 +250,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 							
 							try(final InputStream	is = fsi.read();
 								final OutputStream	os = e.getResponseBody()) {
-								final MimeType[]	inputType = InternalUtils.defineMimeByExtension(name);
+								final MimeType[]	inputType = defineMimeByExtension(name);
 								
 								sendContent(e, name, is, os);
 							} catch (Exception exc) {
@@ -323,6 +326,15 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		return result;
 	}
 
+	private static MimeType[] defineMimeByExtension(final String fileName) {
+		try {
+			return new MimeType[] {MimeType.valueOf(URLConnection.getFileNameMap().getContentTypeFor(fileName))};
+		} catch (MimeParseException | IllegalArgumentException e) {
+			return EMPTY_MIMES;
+		}		
+	}
+
+	
 	static class DeploymentKeeper<T> {
 		final String[]	path;
 		final T			content;

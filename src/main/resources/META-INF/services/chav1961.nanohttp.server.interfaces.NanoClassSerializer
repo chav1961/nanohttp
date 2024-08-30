@@ -1,0 +1,3 @@
+chav1961.nanohttp.server.serializers.StringClassSerializer
+chav1961.nanohttp.server.serializers.GsonClassSerializer
+chav1961.nanohttp.server.serializers.MultipartClassSerializer

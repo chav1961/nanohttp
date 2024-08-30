@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,19 +32,24 @@ import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.WebApplicationException;
 
 import com.sun.net.httpserver.HttpExchange;
 
+import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoClassSerializer;
+import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
+import chav1961.purelib.basic.MimeType;
 import chav1961.purelib.basic.URIUtils;
 import chav1961.purelib.basic.Utils;
+import chav1961.purelib.basic.exceptions.MimeParseException;
 
 public class AnnotationParser<T> {
 	private static final Pattern 				PARM_EXTRACTOR = Pattern.compile(".*\\{(.*)\\}");
-	private static final MethodHandles.Lookup	LOOKUP = MethodHandles.publicLookup();
+	private static final MethodHandles.Lookup	LOOKUP = MethodHandles.lookup();
 	private static final Set<Class<?>>			AVAILABLE_PARMS = Collections.unmodifiableSet(Set.of(UUID.class, Long.class, long.class, Integer.class, int.class, String.class));
 	private static final String					CONTENT_ENCODING = "UTF-8";
+	private static final MimeType[]				DEFAULT_MIMES = {MimeType.MIME_HTML_TEXT, MimeType.MIME_PLAIN_TEXT};
+	private static final String					ACCEPT_HEADER = "Accept";
 
 	private final T annotated;
 	private final Class<T> annotatedClass;
@@ -107,7 +114,7 @@ public class AnnotationParser<T> {
 		}
 	}
 
-	public void processRequest(final HttpExchange ex, final Object... advanced) throws IOException, WebApplicationException {
+	public void processRequest(final HttpExchange ex, final Object... advanced) throws IOException, RestServiceException {
 		if (ex == null) {
 			throw new NullPointerException("Exchange can't be null");
 		}
@@ -118,11 +125,11 @@ public class AnnotationParser<T> {
 			final RequestType	type = RequestType.valueOf(ex.getRequestMethod());
 			
 			for (CallDescriptor desc : methods[type.ordinal()]) {
-				if (desc.matchAndCall(desc, type, ex.getRequestURI(), ex, advanced)) {
+				if (desc.matchAndCall(annotated, type, ex.getRequestURI(), ex, advanced)) {
 					return;
 				}
 			}
-			throw new NotFoundException();
+			throw new RestServiceException(403);
 		}
 	}
 	
@@ -149,7 +156,7 @@ public class AnnotationParser<T> {
 										LOOKUP.findVirtual(m.getDeclaringClass(), m.getName(), mt), 
 										returned == void.class || returned == Void.class, 
 										findResponseSerializer(m));
-				} catch (NoSuchMethodException | IllegalAccessException e) {
+				} catch (NoSuchMethodException | IllegalAccessException | MimeParseException e) {
 					throw new IllegalArgumentException(e);
 				}
 			}
@@ -174,7 +181,7 @@ public class AnnotationParser<T> {
 									LOOKUP.findVirtual(m.getDeclaringClass(), m.getName(), mt), 
 									returned == void.class || returned == Void.class, 
 									findResponseSerializer(m));
-			} catch (NoSuchMethodException | IllegalAccessException e) {
+			} catch (NoSuchMethodException | IllegalAccessException | MimeParseException e) {
 				throw new IllegalArgumentException(e);
 			}
 		}
@@ -198,7 +205,7 @@ public class AnnotationParser<T> {
 									LOOKUP.findVirtual(m.getDeclaringClass(), m.getName(), mt), 
 									returned == void.class || returned == Void.class, 
 									findResponseSerializer(m));
-			} catch (NoSuchMethodException | IllegalAccessException e) {
+			} catch (NoSuchMethodException | IllegalAccessException | MimeParseException e) {
 				throw new IllegalArgumentException(e);
 			}
 		}
@@ -227,7 +234,7 @@ public class AnnotationParser<T> {
 										LOOKUP.findVirtual(m.getDeclaringClass(), m.getName(), mt), 
 										returned == void.class || returned == Void.class, 
 										findResponseSerializer(m));
-				} catch (NoSuchMethodException | IllegalAccessException e) {
+				} catch (NoSuchMethodException | IllegalAccessException | MimeParseException e) {
 					throw new IllegalArgumentException(e);
 				}
 			}
@@ -242,7 +249,7 @@ public class AnnotationParser<T> {
 		throw new UnsupportedOperationException("@OPTIONS request is not implemented yet");
 	}
 
-	static Extractor[] processParameters(final Method m, final String path, final boolean hasBody) {
+	static Extractor[] processParameters(final Method m, final String path, final boolean hasBody) throws MimeParseException {
 		final Extractor[] 	parms = new Extractor[m.getParameterCount()];
 		final String[] 		pathParameters = extractPathParameters(path);
 		
@@ -252,18 +259,34 @@ public class AnnotationParser<T> {
 		return parms;
 	}
 	
-	static Extractor processParameter(final Parameter parm, final Method m, final String path, final String[] pathParameters, final boolean hasBody) {
-		final String value = parm.isAnnotationPresent(DefaultValue.class) ? parm.getAnnotation(DefaultValue.class).value() : null;
+	static Extractor processParameter(final Parameter parm, final Method m, final String path, final String[] pathParameters, final boolean hasBody) throws MimeParseException, IllegalArgumentException {
+		final String 			value = parm.isAnnotationPresent(DefaultValue.class) ? parm.getAnnotation(DefaultValue.class).value() : null;
+		final Class<?>			cl = parm.getType();
+		final ParameterClass	pc = ParameterClass.forClass(cl);
 		
 		if (parm.isAnnotationPresent(QueryParam.class)) {
 			final String name = parm.getAnnotation(QueryParam.class).value();
 			
-			return (rq,p,obj)->getOrDefault(URIUtils.parseQuery(rq.getRequestURI().getQuery()).get(name), value);
+			switch (pc) {
+				case INT : case LONG : case STRING : case UUID :
+					return (rq,p,obj)->pc.cast(getOrDefault(URIUtils.parseQuery(rq.getRequestURI().getQuery()).get(name), value));
+				case UNSUPPORTED	:
+					throw new IllegalArgumentException("Illegal parameter class ["+cl.getCanonicalName()+"] for @QueryParam annotation, only UUID, Long/long, Integer/int and String classes are available"); 
+				default:
+					throw new UnsupportedOperationException("Parameter class ["+pc+"] is not supported yet");
+			}
 		}
 		else if (parm.isAnnotationPresent(HeaderParam.class)) {
 			final String name = parm.getAnnotation(HeaderParam.class).value();
 			
-			return (rq,p,obj)->getOrDefault(rq.getRequestHeaders().getFirst(name), value);
+			switch (pc) {
+				case INT : case LONG : case STRING : case UUID :
+					return (rq,p,obj)->pc.cast(getOrDefault(rq.getRequestHeaders().getFirst(name), value));
+				case UNSUPPORTED	:
+					throw new IllegalArgumentException("Illegal parameter class ["+cl.getCanonicalName()+"] for @HeaderParam annotation, only UUID, Long/long, Integer/int and String classes are available"); 
+				default:
+					throw new UnsupportedOperationException("Parameter class ["+pc+"] is not supported yet");
+			}
 		}
 		else if (parm.isAnnotationPresent(PathParam.class)) {
 			final String name = parm.getAnnotation(PathParam.class).value();
@@ -275,18 +298,14 @@ public class AnnotationParser<T> {
 					}
 					else {
 						final int currentValue = pathTemplate2Index(path, name);
-						
-						if (parm.getType() == UUID.class) {
-							return (rq,p,obj)->UUID.fromString(p.split("/")[currentValue]);
-						}
-						else if (parm.getType() == long.class || parm.getType() == Long.class) {
-							return (rq,p,obj)->Long.valueOf(p.split("/")[currentValue]);
-						}
-						else if (parm.getType() == int.class || parm.getType() == Integer.class) {
-							return (rq,p,obj)->Integer.valueOf(p.split("/")[currentValue]);
-						}
-						else {
-							return (rq,p,obj)->p.split("/")[currentValue];
+
+						switch (pc) {
+							case INT : case LONG : case STRING : case UUID :
+								return (rq,p,obj)->pc.cast((p.split("/")[currentValue]));
+							case UNSUPPORTED	:
+								throw new IllegalArgumentException("Illegal parameter class ["+cl.getCanonicalName()+"] for @HeaderParam annotation, only UUID, Long/long, Integer/int and String classes are available"); 
+							default:
+								throw new UnsupportedOperationException("Parameter class ["+pc+"] is not supported yet");
 						}
 					}
 				}
@@ -305,17 +324,16 @@ public class AnnotationParser<T> {
 		else if (parm.isAnnotationPresent(MatrixParam.class)) {
 			throw new UnsupportedOperationException("@MatrixParam option is not implemented yet");
 		}
-		else {
-			final Class<?> cl = parm.getType();
+		else if (hasBody) {
+			final MimeType[]			mimes = m.isAnnotationPresent(Consumes.class) 
+													? MimeType.parseMimes(m.getAnnotation(Consumes.class).value()) 
+													: DEFAULT_MIMES;
+			final NanoClassSerializer	serializer = findSerializer(cl, mimes); 
 			
-			if (hasBody) {
-				final NanoClassSerializer	serializer = findSerializer(cl, m.isAnnotationPresent(Consumes.class) ? m.getAnnotation(Consumes.class).value() : new String[] {"text/plain", "text/html"}); 
-				
-				return (rq, p, obj)->getValueByClass(rq, cl, obj, serializer);
-			}
-			else {
-				return (rq, p, obj)->getValueByClass(rq, cl, obj);
-			}
+			return (rq, p, obj)->getValueByClass(rq, cl, obj, serializer);
+		}
+		else {
+			return (rq, p, obj)->getValueByClass(rq, cl, obj);
 		}
 	}
 	
@@ -371,7 +389,7 @@ public class AnnotationParser<T> {
 				return (T) content[index];
 			}
 		}
-		throw new IllegalArgumentException("Class ["+cl+"] can't be found anywhere and no body in the request");
+		throw new RestServiceException(415);
 	}
 	
 	private static <T> T getValueByClass(final HttpExchange rq, final Class<T> cl, final Object[] content, final NanoClassSerializer serializer) throws IOException {
@@ -383,24 +401,76 @@ public class AnnotationParser<T> {
 		return serializer.deserialize(rq.getRequestBody(), cl);
 	}
 
-	private static void sendResult(HttpExchange ex, final int rc, Object result) {
-		// TODO Auto-generated method stub
+	private static void sendResult(final HttpExchange ex, final int rc, Object result, final NanoClassSerializer ser, final OutputStream os) throws IOException, MimeParseException {
+		final List<String>	mimes = ex.getRequestHeaders().get(ACCEPT_HEADER);
+		final Class<?>		cl = result.getClass();
+
+		for (MimeType mime : mimes != null ? MimeType.parseMimes(mimes) : DEFAULT_MIMES) {
+			if (ser.canServe(mime, cl)) {
+				ex.sendResponseHeaders(rc, 0);
+				ser.serialize(result, os);
+				return;
+			}
+		}
+	}
+	
+	private static NanoClassSerializer findResponseSerializer(final Method m) throws MimeParseException {
+		final MimeType[]	mimes = m.isAnnotationPresent(Produces.class) 
+								? MimeType.parseMimes(m.getAnnotation(Produces.class).value()) 
+								: DEFAULT_MIMES; 
 		
+		return findSerializer(m.getReturnType(), mimes); 
 	}
 	
-	private static NanoClassSerializer findResponseSerializer(final Method m) {
-		return findSerializer(m.getReturnType(), m.isAnnotationPresent(Produces.class) ? m.getAnnotation(Produces.class).value() : new String[] {"text/plain", "text/html"}); 
-	}
-	
-	private static NanoClassSerializer findSerializer(final Class<?> clazz, final String[] mimes) {
+	private static NanoClassSerializer findSerializer(final Class<?> clazz, final MimeType[] mimes) {
 		for(NanoClassSerializer item : ServiceLoader.load(NanoClassSerializer.class)) {
-			for (String type : mimes) {
+			for (MimeType type : mimes) {
 				if (item.canServe(type, clazz)) {
 					return item;
 				}
 			}
 		}
-		throw new IllegalArgumentException("No serializer available for "+Arrays.toString(mimes)+" mime types");
+		throw new IllegalArgumentException("No serializer available for "+Arrays.toString(mimes)+" mime types and class ["+clazz.getCanonicalName()+"]. Use appropriative @Produces/@Consumes annotations for it");
+	}
+
+	private static enum ParameterClass {
+		UUID((x, cl)->java.util.UUID.fromString(x), UUID.class),
+		LONG((x, cl)->Long.valueOf(x), Long.class, long.class),
+		INT((x, cl)->Integer.valueOf(x), Integer.class, int.class),
+		STRING((x, cl)->x, String.class),
+		UNSUPPORTED(null);
+		
+		private final Class<?>[] available;
+		final BiFunction<String, Class<?>, ?> convertor;
+		
+		private ParameterClass(final BiFunction<String, Class<?>, ?> convertor, final Class<?>... available) {
+			this.available = available;
+			this.convertor = convertor;
+		}
+		
+		public Class<?>[] getAvailableClasses() {
+			return available;
+		}
+		
+		public static ParameterClass forClass(final Class<?> awaited) {
+			if (awaited == null) {
+				throw new NullPointerException("Class to get parameter for can't be null");
+			}
+			else {
+				for(ParameterClass item : ParameterClass.values()) {
+					for (Class<?> cl : item.getAvailableClasses()) {
+						if (cl == awaited) {
+							return item;
+						}
+					}
+				}
+				return UNSUPPORTED;
+			}
+		}
+		
+		<T> T cast(final String value) {
+			return (T) convertor.apply(value, available[0]); 
+		}
 	}
 	
 	private static class CallDescriptor {
@@ -431,16 +501,15 @@ public class AnnotationParser<T> {
 					passValues[index + 1] = parms[index].extract(ex, path, advanced);
 				}
 				try {
-					System.err.println("--- CALL "+mh);
-					final Object result = mh.invokeWithArguments((Object[])passValues);
+					final Object 		result = mh.invokeWithArguments((Object[])passValues);
 					
 					switch (type) {
 						case DELETE	:
-							sendResult(ex, 200, result);
+							sendResponse(ex, 200, "");
 							break;
 						case GET	:
 							if (result != null) {
-								sendResult(ex, 200, result);
+								sendResult(ex, 200, result, responseSerializer, ex.getResponseBody());
 							}
 							else {
 								sendResponse(ex, 404, "");
@@ -451,14 +520,14 @@ public class AnnotationParser<T> {
 								sendResponse(ex, 204, "");
 							}
 							else if (result != null) {
-								sendResult(ex, 201, result);
+								sendResult(ex, 201, result, responseSerializer, ex.getResponseBody());
 							}
 							else {
 								sendResponse(ex, 201, "");
 							}
 							break;
 						case PUT	:
-							sendResult(ex, 200, result);
+							sendResult(ex, 200, result, responseSerializer, ex.getResponseBody());
 							break;
 						case HEAD : case OPTIONS :
 						default:
@@ -470,12 +539,12 @@ public class AnnotationParser<T> {
 						sendResponse(ex, 415, e.getMessage());
 						return true;
 					}
-					else if (e instanceof WebApplicationException) {
-						sendResponse(ex, ((WebApplicationException)e).getResponse().getStatus(), e.getMessage());
+					else if (e instanceof RestServiceException) {
+						sendResponse(ex, ((RestServiceException)e).getResponseCode(), e.getMessage());
 						return true;
 					}
 					else {
-						throw new IOException(e);
+						throw new IOException("Method call: ["+mh+"] - "+e.getLocalizedMessage(), e);
 					}
 				}
 			}
@@ -487,8 +556,6 @@ public class AnnotationParser<T> {
 		private boolean matches(final String path) {
 			final String[] piece = path.split("/");
 			final String[] template = pathTemplate;
-			
-			System.err.println("--- Matches "+path+" and "+String.join("/", template));
 			
 			if (piece.length != template.length) {
 				return false;

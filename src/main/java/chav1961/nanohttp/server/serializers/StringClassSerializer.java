@@ -9,28 +9,36 @@ import java.io.Reader;
 import java.io.Writer;
 
 import chav1961.nanohttp.server.interfaces.NanoClassSerializer;
-import chav1961.purelib.basic.URIUtils;
+import chav1961.purelib.basic.MimeType;
 
 public class StringClassSerializer implements NanoClassSerializer {
-	private static final String[]	MIMES = {"text/plain", "text/html"};
+	private static final MimeType[]	MIMES = {MimeType.MIME_HTML_TEXT, MimeType.MIME_PLAIN_TEXT, MimeType.MIME_MARKDOWN_TEXT, MimeType.MIME_CREOLE_TEXT};
 
 	@Override
-	public String[] getMimeTypes() {
+	public MimeType[] getMimeTypes() {
 		return MIMES;
 	}
 
 	@Override
-	public <T> boolean canServe(final String mime, final Class<T> awaited) {
-		if (awaited == String.class && mime != null) {
-			for(String item : getMimeTypes()) {
-				if (mime.startsWith(item)) {
-					return true;
-				}
-			}
-			return false;
+	public <T> boolean canServe(final MimeType mime, final Class<T> awaited) {
+		if (mime == null) {
+			throw new NullPointerException("Mime type can't be null");
+		}
+		else if (awaited == null) {
+			throw new NullPointerException("Awaited class can;t be null");
 		}
 		else {
-			return false;
+			if (isClassSupported(awaited) && mime != null) {
+				for(MimeType item : getMimeTypes()) {
+					if (mime.containsIn(item)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			else {
+				return false;
+			}
 		}
 	}
 
@@ -53,5 +61,9 @@ public class StringClassSerializer implements NanoClassSerializer {
 		
 		wr.write(content.toString());
 		wr.flush();
+	}
+	
+	private boolean isClassSupported(final Class<?> awaited) {
+		return awaited == String.class || awaited.isPrimitive(); 
 	}
 }

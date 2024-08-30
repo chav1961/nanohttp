@@ -4,6 +4,8 @@ module chav1961.nanohttp {
 	requires jdk.httpserver;
 	requires javax.ws.rs.api;
 	requires java.management;
+	requires com.google.gson;
+	requires java.mail;
 	
 	exports chav1961.nanohttp;
 	exports chav1961.nanohttp.server;
@@ -18,5 +20,4 @@ module chav1961.nanohttp {
 	uses chav1961.nanohttp.server.interfaces.NanoContentEncoder;
 	provides chav1961.nanohttp.server.interfaces.NanoContentEncoder with 
 			chav1961.nanohttp.server.serializers.GZipContentEncoder;
-
 }

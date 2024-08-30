@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import chav1961.purelib.basic.MimeType;
+
 public interface NanoClassSerializer {
-	String[] getMimeTypes();
-	<T> boolean canServe(String mime, Class<T> awaited);
+	MimeType[] getMimeTypes();
+	<T> boolean canServe(MimeType mime, Class<T> awaited);
 	<T> T deserialize(InputStream is, Class<T> awaited) throws IOException;
 	<T> void serialize(T content, OutputStream os) throws IOException;
 }
