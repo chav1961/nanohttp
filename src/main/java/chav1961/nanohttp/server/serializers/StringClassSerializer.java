@@ -12,7 +12,7 @@ import chav1961.nanohttp.server.interfaces.NanoClassSerializer;
 import chav1961.purelib.basic.MimeType;
 
 public class StringClassSerializer implements NanoClassSerializer {
-	private static final MimeType[]	MIMES = {MimeType.MIME_HTML_TEXT, MimeType.MIME_PLAIN_TEXT, MimeType.MIME_MARKDOWN_TEXT, MimeType.MIME_CREOLE_TEXT};
+	private static final MimeType[]	MIMES = {MimeType.MIME_HTML_TEXT, MimeType.MIME_PLAIN_TEXT, MimeType.MIME_MARKDOWN_TEXT, MimeType.MIME_CREOLE_TEXT, MimeType.MIME_ANY_TYPE};
 
 	@Override
 	public MimeType[] getMimeTypes() {
@@ -57,10 +57,10 @@ public class StringClassSerializer implements NanoClassSerializer {
 
 	@Override
 	public <T> void serialize(final T content, final OutputStream os) throws IOException {
-		final Writer	wr = new OutputStreamWriter(os);
-		
-		wr.write(content.toString());
-		wr.flush();
+		try(final Writer	wr = new OutputStreamWriter(os)) {
+			wr.write(content.toString());
+			wr.flush();
+		}
 	}
 	
 	private boolean isClassSupported(final Class<?> awaited) {

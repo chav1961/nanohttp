@@ -6,6 +6,7 @@ module chav1961.nanohttp {
 	requires java.management;
 	requires com.google.gson;
 	requires java.mail;
+	requires jdk.attach;
 	
 	exports chav1961.nanohttp;
 	exports chav1961.nanohttp.server;

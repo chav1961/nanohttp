@@ -56,14 +56,14 @@ public class AnnotationParser<T> {
 	private final CallDescriptor[][] methods;
 	private final String rootPath;
 	
-	public AnnotationParser(final T inst) {
+	public AnnotationParser(final T inst, final String rootPrefix) {
 		if (inst == null) {
 			throw new NullPointerException("Instance to parse can't be null");
 		}
 		else {
 			this.annotated = inst;
 			this.annotatedClass = (Class<T>) inst.getClass();
-			this.rootPath = this.annotatedClass.isAnnotationPresent(Path.class) ? this.annotatedClass.getAnnotation(Path.class).value() : "";
+			this.rootPath = rootPrefix + (this.annotatedClass.isAnnotationPresent(Path.class) ? this.annotatedClass.getAnnotation(Path.class).value() : "");
 			
 			final List<CallDescriptor>[]	temp = new List[RequestType.values().length];
 			
@@ -77,16 +77,16 @@ public class AnnotationParser<T> {
 					if (m.isAnnotationPresent(rq.getAnnotationAssociated())) {
 						switch (rq) {
 							case DELETE 	:
-								temp[rq.ordinal()].add(processDeleteRequest(m));
+								temp[rq.ordinal()].add(processDeleteRequest(m, rootPrefix));
 								break;
 							case GET 		:
-								temp[rq.ordinal()].add(processGetRequest(m));
+								temp[rq.ordinal()].add(processGetRequest(m, rootPrefix));
 								break;
 							case POST 		:
-								temp[rq.ordinal()].add(processPostRequest(m));
+								temp[rq.ordinal()].add(processPostRequest(m, rootPrefix));
 								break;
 							case PUT 		:
-								temp[rq.ordinal()].add(processPutRequest(m));
+								temp[rq.ordinal()].add(processPutRequest(m, rootPrefix));
 								break;
 							case HEAD		:
 								temp[rq.ordinal()].add(processHeadRequest(m));
@@ -113,6 +113,10 @@ public class AnnotationParser<T> {
 			}
 		}
 	}
+	
+	public String getRootPath() {
+		return rootPath;
+	}
 
 	public void processRequest(final HttpExchange ex, final Object... advanced) throws IOException, RestServiceException {
 		if (ex == null) {
@@ -123,7 +127,7 @@ public class AnnotationParser<T> {
 		}
 		else {
 			final RequestType	type = RequestType.valueOf(ex.getRequestMethod());
-			
+			 
 			for (CallDescriptor desc : methods[type.ordinal()]) {
 				if (desc.matchAndCall(annotated, type, ex.getRequestURI(), ex, advanced)) {
 					return;
@@ -133,7 +137,7 @@ public class AnnotationParser<T> {
 		}
 	}
 	
-	static CallDescriptor processGetRequest(final Method m) {
+	static CallDescriptor processGetRequest(final Method m, final String rootPath) {
 		final Class<?> returned = m.getReturnType();
 		
 		if (returned == void.class) {
@@ -147,7 +151,7 @@ public class AnnotationParser<T> {
 			}
 			else {
 				try {
-					final String 		totalPath = buildFullPath(m, path);
+					final String 		totalPath = rootPath + buildFullPath(m, path);
 					final MethodType 	mt = MethodType.methodType(returned, (Class[])m.getParameterTypes());
 					
 					return new CallDescriptor(RequestType.GET, 
@@ -163,7 +167,7 @@ public class AnnotationParser<T> {
 		}
 	}
 
-	static CallDescriptor processPostRequest(final Method m) {
+	static CallDescriptor processPostRequest(final Method m, final String rootPath) {
 		final Class<?> returned = m.getReturnType();
 		final String path = m.isAnnotationPresent(Path.class) ? m.getAnnotation(Path.class).value().trim() : "";
 		
@@ -172,7 +176,7 @@ public class AnnotationParser<T> {
 		}
 		else {
 			try {
-				final String 		totalPath = buildFullPath(m, path);
+				final String 		totalPath = rootPath + buildFullPath(m, path);
 				final MethodType 	mt = MethodType.methodType(returned, (Class[])m.getParameterTypes());
 				
 				return new CallDescriptor(RequestType.POST, 
@@ -187,7 +191,7 @@ public class AnnotationParser<T> {
 		}
 	}
 
-	static CallDescriptor processPutRequest(final Method m) {
+	static CallDescriptor processPutRequest(final Method m, final String rootPath) {
 		final Class<?> returned = m.getReturnType();
 		final String path = m.isAnnotationPresent(Path.class) ? m.getAnnotation(Path.class).value().trim() : "";
 		
@@ -196,7 +200,7 @@ public class AnnotationParser<T> {
 		}
 		else {
 			try {
-				final String 		totalPath = buildFullPath(m, path);
+				final String 		totalPath = rootPath + buildFullPath(m, path);
 				final MethodType 	mt = MethodType.methodType(returned, (Class[])m.getParameterTypes());
 				
 				return new CallDescriptor(RequestType.PUT, 
@@ -211,7 +215,7 @@ public class AnnotationParser<T> {
 		}
 	}
 
-	static CallDescriptor processDeleteRequest(Method m) {
+	static CallDescriptor processDeleteRequest(final Method m, final String rootPath) {
 		final Class<?> returned = m.getReturnType();
 		
 		if (returned != void.class) {
@@ -225,7 +229,7 @@ public class AnnotationParser<T> {
 			}
 			else {
 				try {
-					final String 		totalPath = buildFullPath(m, path);
+					final String 		totalPath = rootPath + buildFullPath(m, path);
 					final MethodType 	mt = MethodType.methodType(returned, (Class[])m.getParameterTypes());
 					
 					return new CallDescriptor(RequestType.DELETE, 
@@ -338,9 +342,9 @@ public class AnnotationParser<T> {
 	}
 	
 	private static String buildFullPath(final Method m, final String path) {
-		final String	rootPath = m.getDeclaringClass().isAnnotationPresent(Path.class) ? m.getDeclaringClass().getAnnotation(Path.class).value() : ""; 
+		final String	tailPath = m.getDeclaringClass().isAnnotationPresent(Path.class) ? m.getDeclaringClass().getAnnotation(Path.class).value() : ""; 
 		
-		return rootPath+(rootPath.endsWith("/") ? path.substring(1) : path);
+		return tailPath+(tailPath.endsWith("/") ? path.substring(1) : path);
 	}
 
 	private static String[] extractPathParameters(final String path) {
@@ -412,6 +416,7 @@ public class AnnotationParser<T> {
 				return;
 			}
 		}
+		throw new RestServiceException(500);
 	}
 	
 	private static NanoClassSerializer findResponseSerializer(final Method m) throws MimeParseException {

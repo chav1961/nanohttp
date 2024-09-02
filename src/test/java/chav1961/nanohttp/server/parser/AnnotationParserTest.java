@@ -26,7 +26,7 @@ public class AnnotationParserTest {
 	@Test
 	public void basicTest() throws WebApplicationException, IOException {
 		final GetAnnotated	ga = new GetAnnotated();
-		final AnnotationParser<GetAnnotated>	ap = new AnnotationParser<>(ga);
+		final AnnotationParser<GetAnnotated>	ap = new AnnotationParser<>(ga, "");
 		final HttpExchange	ex = new DebugExchanger(RequestType.GET, "/unknown", new Headers());
 		
 		try {
@@ -41,11 +41,11 @@ public class AnnotationParserTest {
 		} catch (NullPointerException exc) {
 		}
 
-		try{new AnnotationParser<>(null);
+		try{new AnnotationParser<>(null, "");
 			Assert.fail("Mandatory exception was not detected (null 1-st argument)");
 		} catch (NullPointerException exc) {
 		}
-		try{new AnnotationParser<>("test string");
+		try{new AnnotationParser<>("test string", "");
 			Assert.fail("Mandatory exception was not detected (class is not annotated)");
 		} catch (IllegalArgumentException exc) {
 		}
@@ -54,7 +54,7 @@ public class AnnotationParserTest {
 	@Test
 	public void getTest() throws WebApplicationException, IOException {
 		final GetAnnotated	ga = new GetAnnotated();
-		final AnnotationParser<GetAnnotated>	ap = new AnnotationParser<>(ga);
+		final AnnotationParser<GetAnnotated>	ap = new AnnotationParser<>(ga, "");
 		DebugExchanger	ex = new DebugExchanger(RequestType.GET, "/root/simple", new Headers());
 
 		ap.processRequest(ex);
@@ -135,7 +135,7 @@ public class AnnotationParserTest {
 	@Test
 	public void postTest() throws WebApplicationException, IOException {
 		final PostAnnotated	pa = new PostAnnotated();
-		final AnnotationParser<PostAnnotated>	ap = new AnnotationParser<>(pa);
+		final AnnotationParser<PostAnnotated>	ap = new AnnotationParser<>(pa, "");
 		DebugExchanger	ex = new DebugExchanger(RequestType.POST, "/root/simple", new Headers());
 
 		ap.processRequest(ex);
@@ -160,6 +160,12 @@ public class AnnotationParserTest {
 		Assert.assertEquals(201, ex.getResponseCode());
 		Assert.assertEquals("test", ex.getResponseContent());
 
+		ex = new DebugExchanger(RequestType.POST, "/root/simple/parm", new Headers(), "mzinana");
+
+		ap.processRequest(ex);
+		Assert.assertEquals(201, ex.getResponseCode());
+		Assert.assertEquals("mzinana", ex.getResponseContent());
+		
 		ex = new DebugExchanger(RequestType.POST, "/root/simple/body", 
 				Headers.of("Accept","application/json","Content-Type","application/json"), 
 				"{\"value\":\"mzinana\"}");
@@ -172,7 +178,7 @@ public class AnnotationParserTest {
 	@Test
 	public void putTest() throws WebApplicationException, IOException {
 		final PutAnnotated	pa = new PutAnnotated();
-		final AnnotationParser<PutAnnotated>	ap = new AnnotationParser<>(pa);
+		final AnnotationParser<PutAnnotated>	ap = new AnnotationParser<>(pa, "");
 		DebugExchanger	ex = new DebugExchanger(RequestType.PUT, "/root/simple", new Headers());
 
 		ap.processRequest(ex);
@@ -209,7 +215,7 @@ public class AnnotationParserTest {
 	@Test
 	public void deleteTest() throws WebApplicationException, IOException {
 		final DeleteAnnotated	da = new DeleteAnnotated();
-		final AnnotationParser<DeleteAnnotated>	ap = new AnnotationParser<>(da);
+		final AnnotationParser<DeleteAnnotated>	ap = new AnnotationParser<>(da, "");
 		DebugExchanger	ex = new DebugExchanger(RequestType.DELETE, "/root/simple", new Headers());
 
 		ap.processRequest(ex);
@@ -229,7 +235,7 @@ public class AnnotationParserTest {
 	@Test
 	public void multipartTest() throws WebApplicationException, IOException, MessagingException {
 		final MultipartAnnotated	pa = new MultipartAnnotated();
-		final AnnotationParser<MultipartAnnotated>	ap = new AnnotationParser<>(pa);
+		final AnnotationParser<MultipartAnnotated>	ap = new AnnotationParser<>(pa, "");
 		final MimeBodyPart			mm = new MimeBodyPart();
 		final ByteArrayOutputStream	os = new ByteArrayOutputStream();
 		final InputStream			is;

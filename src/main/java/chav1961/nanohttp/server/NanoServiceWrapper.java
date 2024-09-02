@@ -19,6 +19,7 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.function.BiConsumer;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -62,6 +63,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	private final List<DeploymentKeeper<?>>			deployed = new CopyOnWriteArrayList<>();
 	private final Map<String, NanoContentEncoder>	encoders = new HashMap<>();
 	private final boolean				lockExternalQueries;
+	private volatile Object[]			passedParameters = new Object[0];
 	private volatile boolean			isStarted = false;	
 	private volatile boolean			isSuspended = false;	
 	
@@ -181,7 +183,10 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}
 		else {
 			synchronized (deployed) {
-				deployed.add(new DeploymentKeeper<AnnotationParser<?>>(path.split("/"), new AnnotationParser<>(instance2deploy)));
+				final AnnotationParser<?>	ap = new AnnotationParser<>(instance2deploy, path);
+				final String				totalPath = ap.getRootPath();				
+				
+				deployed.add(new DeploymentKeeper<AnnotationParser<?>>(totalPath.split("/"), ap));
 				deployed.sort(DEPLOY_SORT);
 			}
 		}
@@ -225,6 +230,35 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	public InetSocketAddress getServerAddress() {
 		return server.getAddress();
 	}
+
+	public void forEachDeployed(final BiConsumer<String, Object> callback) {
+		if (callback == null) {
+			throw new NullPointerException("Callback can't be null"); 
+		}
+		else {
+			final DeploymentKeeper<?>[]	content;
+			
+			synchronized (deployed) {
+				content = deployed.toArray(new DeploymentKeeper<?>[deployed.size()]);
+			}
+			for(DeploymentKeeper<?> item : content) {
+				callback.accept(String.join("/", item.path), item.content);
+			}
+		}
+	}
+	
+	public Object[] getPassedParameters() {
+		return passedParameters;
+	}
+	
+	public void setPassedParameters(final Object... parameters) {
+		if (parameters == null) {
+			throw new NullPointerException("Parameters to set can't be null");
+		}
+		else {
+			this.passedParameters = parameters;
+		}
+	}
 	
 	protected boolean isHttpsUsed() {
 		return useHttps;
@@ -250,8 +284,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 							
 							try(final InputStream	is = fsi.read();
 								final OutputStream	os = e.getResponseBody()) {
-								final MimeType[]	inputType = defineMimeByExtension(name);
-								
+
 								sendContent(e, name, is, os);
 							} catch (Exception exc) {
 								e.sendResponseHeaders(500, 0);
@@ -263,7 +296,10 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 					e.sendResponseHeaders(404, 0);
 				}
 			}
-			else {
+ 			else if (deployed.content instanceof AnnotationParser<?>) {
+ 				((AnnotationParser<?>)deployed.content).processRequest(e, passedParameters);
+ 			}
+ 			else {	
 				e.sendResponseHeaders(500, 0);
 			}
 		}
