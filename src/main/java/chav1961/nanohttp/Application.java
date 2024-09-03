@@ -29,7 +29,7 @@ import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 
-public class Applicaiton {
+public class Application {
 	public static final String		ARG_MODE = "mode";
 	public static final String		ARG_APP_DIR = "appdir";
 	public static final String		ARG_CONFIG_FILE = "conf";
@@ -92,7 +92,7 @@ public class Applicaiton {
 	}
 
 	private static VirtualMachine getVM() throws AttachNotSupportedException, IOException {
-		final String	name = Applicaiton.class.getModule().getName()+"/"+Applicaiton.class.getCanonicalName();
+		final String	name = Application.class.getModule().getName()+"/"+Application.class.getCanonicalName();
 				
 		for(VirtualMachineDescriptor item : VirtualMachine.list()) {
 			if (item.displayName().equals(name)) {
