@@ -10,6 +10,5 @@ import chav1961.purelib.basic.MimeType;
 public interface NanoContentSerializer {
 	MimeType[] getMimeTypes();
 	boolean canServe(MimeType mimeFrom, MimeType mimeTo);
-	InputStream deserialize(InputStream is, MimeType mimeFrom, MimeType mimeTo) throws IOException;
 	OutputStream serialize(OutputStream os, MimeType mimeFrom, MimeType mimeTo) throws IOException;
 }

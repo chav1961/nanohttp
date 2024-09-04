@@ -21,4 +21,8 @@ module chav1961.nanohttp {
 	uses chav1961.nanohttp.server.interfaces.NanoContentEncoder;
 	provides chav1961.nanohttp.server.interfaces.NanoContentEncoder with 
 			chav1961.nanohttp.server.serializers.GZipContentEncoder;
+
+	uses chav1961.nanohttp.server.interfaces.NanoContentSerializer;
+	provides chav1961.nanohttp.server.interfaces.NanoContentSerializer with 
+			chav1961.nanohttp.server.serializers.TextContentSerializer;
 }

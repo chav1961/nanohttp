@@ -468,11 +468,16 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	}
 
 	private static MimeType[] defineMimeByExtension(final String fileName) {
-		try {
-			return new MimeType[] {MimeType.valueOf(URLConnection.getFileNameMap().getContentTypeFor(fileName))};
-		} catch (MimeParseException | IllegalArgumentException e) {
-			return EMPTY_MIMES;
-		}		
+		if (fileName.endsWith(".cre")) {
+			return new MimeType[] {MimeType.MIME_CREOLE_TEXT};
+		}
+		else {
+			try {
+				return new MimeType[] {MimeType.valueOf(URLConnection.getFileNameMap().getContentTypeFor(fileName))};
+			} catch (MimeParseException | IllegalArgumentException e) {
+				return EMPTY_MIMES;
+			}		
+		}
 	}
 
 	private HttpServer prepareServer(final NanoServiceBuilder bldr) throws IOException {
