@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import chav1961.purelib.basic.MimeType;
+
 // MimeBodyPart
 public interface NanoContentSerializer {
-	String[] getMimeTypes();
-	boolean canServe(String mimeFrom, String mimeTo);
-	InputStream deserialize(InputStream is, String mime) throws IOException;
-	OutputStream serialize(OutputStream os, String mime) throws IOException;
+	MimeType[] getMimeTypes();
+	boolean canServe(MimeType mimeFrom, MimeType mimeTo);
+	InputStream deserialize(InputStream is, MimeType mimeFrom, MimeType mimeTo) throws IOException;
+	OutputStream serialize(OutputStream os, MimeType mimeFrom, MimeType mimeTo) throws IOException;
 }

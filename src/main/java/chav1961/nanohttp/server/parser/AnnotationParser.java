@@ -133,7 +133,7 @@ public class AnnotationParser<T> {
 					return;
 				}
 			}
-			throw new RestServiceException(403);
+			throw new RestServiceException(404);
 		}
 	}
 	

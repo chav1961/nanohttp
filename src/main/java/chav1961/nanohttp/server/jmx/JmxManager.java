@@ -1,18 +1,24 @@
 package chav1961.nanohttp.server.jmx;
 
 import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
 
 import chav1961.nanohttp.server.NanoServiceWrapper;
 
 public class JmxManager implements JmxManagerMBean {
 	private final NanoServiceWrapper	wrapper;
+	private final CountDownLatch		latch;
 	
-	public JmxManager(final NanoServiceWrapper wrapper) {
+	public JmxManager(final NanoServiceWrapper wrapper, final CountDownLatch latch) {
 		if (wrapper == null) {
 			throw new NullPointerException("Wrapper can't be null");
 		}
+		else if (latch == null) {
+			throw new NullPointerException("Latch can't be null");
+		}
 		else {
 			this.wrapper = wrapper;
+			this.latch = latch;
 		}
 	}
 	
@@ -39,7 +45,7 @@ public class JmxManager implements JmxManagerMBean {
 	@Override
 	public void terminateAndExit() throws IOException {
 		getWrapper().close();
-		System.exit(0);
+		latch.countDown();
 	}
 
 	@Override

@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
+import java.util.Map.Entry;
+import java.util.concurrent.CountDownLatch;
 
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.JMX;
@@ -32,6 +34,7 @@ import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 public class Application {
 	public static final String		ARG_MODE = "mode";
 	public static final String		ARG_APP_DIR = "appdir";
+	public static final String		ARG_DEBUG = "d";
 	public static final String		ARG_CONFIG_FILE = "conf";
 	public static final String		JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
 	
@@ -42,15 +45,29 @@ public class Application {
 		try{
 			final ArgParser 				parsed = ap.parse(args); 
 			final SubstitutableProperties	props = SubstitutableProperties.of(parsed.getValue(ARG_CONFIG_FILE, URI.class).toURL().openStream()); 
-			final NanoServiceWrapper		wrapper = NanoServiceBuilder.of(props).build();
 			final ObjectName 				jmxName = new ObjectName(JMX_NAME);
 
 			if (!parsed.isTyped(ARG_MODE)) {
-				final JmxManager		mgr = new JmxManager(wrapper);
-				final MBeanServer 		server = ManagementFactory.getPlatformMBeanServer();
+				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build();
+				final CountDownLatch		latch = new CountDownLatch(1);
+				final JmxManager			mgr = new JmxManager(wrapper, latch);
+				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
 				
 				server.registerMBean(mgr, jmxName);
+				Runtime.getRuntime().addShutdownHook(new Thread(()->{
+					try{wrapper.stop();
+						wrapper.close();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}));
 				wrapper.start(); 
+				
+				try {
+					latch.await();
+				} catch (InterruptedException e) {
+					throw new IOException(e);
+				}
 			}
 			else {
 				final ModeList				mode = parsed.getValue(ARG_MODE, ModeList.class); 
@@ -80,6 +97,7 @@ public class Application {
 					default:
 						throw new UnsupportedOperationException("Service mode ["+parsed.getValue(ARG_MODE, ModeList.class)+"] is not supported yet");
 				}
+				System.err.println("Command completed");
 			}
 		} catch (CommandLineParametersException exc) {
 			System.err.println(exc.getLocalizedMessage());
@@ -92,21 +110,32 @@ public class Application {
 	}
 
 	private static VirtualMachine getVM() throws AttachNotSupportedException, IOException {
-		final String	name = Application.class.getModule().getName()+"/"+Application.class.getCanonicalName();
+		final String	name = Application.class.getProtectionDomain().getCodeSource().getLocation().toString();
+		final String	tail = name.substring(name.lastIndexOf('/')+1);
 				
 		for(VirtualMachineDescriptor item : VirtualMachine.list()) {
-			if (item.displayName().equals(name)) {
+			if (item.displayName().startsWith(tail) && !modeListPresents(item.displayName())) {
 				return VirtualMachine.attach(item);
 			}
 		}
 		throw new AttachNotSupportedException("No any nanohttp servers detected in this computer");
 	}
 
+	private static boolean modeListPresents(final String displayName) {
+		for(ModeList item : ModeList.values()) {
+			if (displayName.contains(" "+item.name()+" ")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static class ApplicationArgParser extends ArgParser {
 		private static final ArgParser.AbstractArg[]	KEYS = {
 			new EnumArg<ModeList>(ARG_MODE, ModeList.class, false, true, "Service control mode. Must be used after service startup only. To startup service, do not type this argument"),
-			new ConfigArg(ARG_CONFIG_FILE, true, false, "Config file location"),
-			new FileArg(ARG_APP_DIR, true, true, "Application directory")
+			new ConfigArg(ARG_CONFIG_FILE, true, false, "Config file location. Can be absolute/relative file path or any URI"),
+			new FileArg(ARG_APP_DIR, true, true, "Application directory"),
+			new BooleanArg(ARG_DEBUG, false, "Turn on debug trace", false)
 		};
 		
 		private ApplicationArgParser() {

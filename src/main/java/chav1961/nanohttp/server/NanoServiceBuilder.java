@@ -32,6 +32,7 @@ public class NanoServiceBuilder {
 	private URI		sslTrustStore = System.getProperties().containsKey(Constants.SYSTEM_SSL_TRUSTSTORE) ? URI.create(System.getProperty(Constants.SYSTEM_SSL_TRUSTSTORE)) : null;
 	private String	sslTrustStoreType = System.getProperties().containsKey(Constants.SYSTEM_SSL_TRUSTSTORE_TYPE) ? System.getProperty(Constants.SYSTEM_SSL_TRUSTSTORE_TYPE) : Constants.DEFAULT_SYSTEM_SSL_TRUSTSTORE_TYPE;
 	private char[]	sslTrustStorePassword = System.getProperties().containsKey(Constants.SYSTEM_SSL_TRUSTSTORE_PASSWD) ? System.getProperty(Constants.SYSTEM_SSL_TRUSTSTORE_PASSWD).toCharArray() : null;
+	private boolean	turnOnTrace = false;
 	
 	private NanoServiceBuilder() {
 		
@@ -115,120 +116,144 @@ public class NanoServiceBuilder {
 		return new NanoServiceBuilder(props, true);
 	}
 	
-	public void setPort(final int port) {
+	public NanoServiceBuilder setPort(final int port) {
 		if (port <= 0 || port > 65535) {
 			throw new IllegalArgumentException("Port number ["+port+"] out of range 1..65535");
 		}
 		else {
 			this.port = port;
+			return this;
 		}
 	}
 
-	public void setRoot(final URI root) {
+	public NanoServiceBuilder setRoot(final URI root) {
 		if (root == null) {
 			throw new NullPointerException("Root can't be null");
 		}
-		this.root = root;
+		else {
+			this.root = root;
+			return this;
+		}
 	}
 
-	public void setLocalhostOnly(final boolean localhostOnly) {
+	public NanoServiceBuilder setLocalhostOnly(final boolean localhostOnly) {
 		this.localhostOnly = localhostOnly;
+		return this;
 	}
 
-	public void setExecutorPoolSize(final int executorPoolSize) {
+	public NanoServiceBuilder setExecutorPoolSize(final int executorPoolSize) {
 		if (executorPoolSize <= 0) {
 			throw new IllegalArgumentException("Executor pool size ["+executorPoolSize+"] must be greater than 0");
 		}
 		else {
 			this.executorPoolSize = executorPoolSize;
+			return this;
 		}
 	}
 
-	public void setDisableLoopback(final boolean disableLoopback) {
+	public NanoServiceBuilder setDisableLoopback(final boolean disableLoopback) {
 		this.disableLoopback = disableLoopback;
+		return this;
 	}
 
-	public void setTemporaryCacheSize(int temporaryCacheSize) {
+	public NanoServiceBuilder setTemporaryCacheSize(int temporaryCacheSize) {
 		if (temporaryCacheSize < 0) {
 			throw new IllegalArgumentException("Temporary cache size ["+temporaryCacheSize+"] can't be negative number");
 		}
 		else {
 			this.temporaryCacheSize = temporaryCacheSize;
+			return this;
 		}
 	}
 
-	public void setCreolePrologueURI(final URI creolePrologueURI) {
+	public NanoServiceBuilder setCreolePrologueURI(final URI creolePrologueURI) {
 		this.creolePrologueURI = creolePrologueURI;
+		return this;
 	}
 
-	public void setCreoleEpilogueURI(final URI creoleEpilogueURI) {
+	public NanoServiceBuilder setCreoleEpilogueURI(final URI creoleEpilogueURI) {
 		this.creoleEpilogueURI = creoleEpilogueURI;
+		return this;
 	}
 
-	public void setUseSSL(final boolean useSSL) {
+	public NanoServiceBuilder setUseSSL(final boolean useSSL) {
 		this.useSSL = useSSL;
+		return this;
 	}
 
-	public void setUseSSLKeystore(final boolean useSSLKeystore) {
+	public NanoServiceBuilder setUseSSLKeystore(final boolean useSSLKeystore) {
 		this.useSSLKeystore = useSSLKeystore;
+		return this;
 	}
 
-	public void setSslKeyStore(final URI sslKeyStore) {
+	public NanoServiceBuilder setSslKeyStore(final URI sslKeyStore) {
 		if (sslKeyStore == null) {
 			throw new NullPointerException("SSL keystore to set can't be null");
 		}
 		else {
 			this.sslKeyStore = sslKeyStore;
+			return this;
 		}
 	}
 
-	public void setSslKeyStoreType(final String sslKeyStoreType) {
+	public NanoServiceBuilder setSslKeyStoreType(final String sslKeyStoreType) {
 		if (Utils.checkEmptyOrNullString(sslKeyStoreType)) {
 			throw new IllegalArgumentException("SSL keystore type to set can't be null or empty");
 		}
 		else {
 			this.sslKeyStoreType = sslKeyStoreType;
+			return this;
 		}
 	}
 
-	public void setSslKeyStorePassword(final char[] sslKeyStorePassword) {
+	public NanoServiceBuilder setSslKeyStorePassword(final char[] sslKeyStorePassword) {
 		if (sslKeyStorePassword == null || sslKeyStorePassword.length == 0) {
 			throw new IllegalArgumentException("SSL keystore password to set can't be null or empty");
 		}
 		else {
 			this.sslKeyStorePassword = sslKeyStorePassword;
+			return this;
 		}
 	}
 
-	public void setUseTrustKeystore(final boolean useTrustKeystore) {
+	public NanoServiceBuilder setUseTrustKeystore(final boolean useTrustKeystore) {
 		this.useTrustKeystore = useTrustKeystore;
+		return this;
 	}
 
-	public void setSslTrustStore(final URI sslTrustStore) {
+	public NanoServiceBuilder setSslTrustStore(final URI sslTrustStore) {
 		if (sslTrustStore == null) {
 			throw new NullPointerException("SSL trust store to set can't be null");
 		}
 		else {
 			this.sslTrustStore = sslTrustStore;
+			return this;
 		}
 	}
 
-	public void setSslTrustStoreType(final String sslTrustStoreType) {
+	public NanoServiceBuilder setSslTrustStoreType(final String sslTrustStoreType) {
 		if (Utils.checkEmptyOrNullString(sslTrustStoreType)) {
 			throw new IllegalArgumentException("SSL trust store type to set can't be null or empty");
 		}
 		else {
 			this.sslTrustStoreType = sslTrustStoreType;
+			return this;
 		}
 	}
 
-	public void setSslTrustStorePassword(final char[] sslTrustStorePassword) {
+	public NanoServiceBuilder setSslTrustStorePassword(final char[] sslTrustStorePassword) {
 		if (sslTrustStorePassword == null || sslTrustStorePassword.length == 0) {
 			throw new IllegalArgumentException("SSL trust store password to set can't be null or empty");
 		}
 		else {
 			this.sslTrustStorePassword = sslTrustStorePassword;
+			return this;
 		}
+	}
+	
+	public NanoServiceBuilder setTraceOn(final boolean traceOn) {
+		this.turnOnTrace = traceOn;
+		return this;
 	}
 	
 	public NanoServiceWrapper build() throws IOException {
@@ -265,6 +290,10 @@ public class NanoServiceBuilder {
 		return localhostOnly;
 	}
 
+	boolean isTraceTurned() {
+		return turnOnTrace;
+	}
+	
 	int getExecutorPoolSize() {
 		return executorPoolSize;
 	}

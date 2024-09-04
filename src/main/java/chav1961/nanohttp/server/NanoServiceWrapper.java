@@ -4,11 +4,15 @@ package chav1961.nanohttp.server;
 
 
 import java.io.Closeable;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLConnection;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,14 +30,19 @@ import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 
+import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoContentEncoder;
 import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.nanohttp.server.parser.AnnotationParser;
 import chav1961.purelib.basic.MimeType;
+import chav1961.purelib.basic.SystemErrLoggerFacade;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.MimeParseException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
+import chav1961.purelib.basic.interfaces.LoggerFacade;
+import chav1961.purelib.basic.interfaces.LoggerFacade.Severity;
+import chav1961.purelib.fsys.interfaces.DataWrapperInterface;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
 public class NanoServiceWrapper implements NanoService, Closeable {
@@ -53,41 +62,37 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 																	return 0;
 																}
 															};
-	private static final String			ACCEPT_ENCODING = "Accept-Encoding";
-	private static final String			CONTENT_ENCODING = "Content-Encoding";
+	private static final String			HEAD_ACCEPT_ENCODING = "Accept-Encoding";
+	private static final String			HEAD_CONTENT_ENCODING = "Content-Encoding";
+	private static final String 		HEAD_CONTENT_LENGTH = "Content-Length";
+	private static final String 		HEAD_CONTENT_TYPE = "Content-type";
+	private static final String 		HEAD_ACCEPT = "Accept"; 	
+	private static final String 		HEAD_ACCEPT_CHARSET = "Accept-charset"; 	
 	private static final MimeType[]		EMPTY_MIMES = new MimeType[0];
+
+	private static final String 		HEAD_CONTENT_ENCODING_IDENTITY = "identity";
+	private static final String 		HEAD_CONTENT_ENCODING_GZIP = "gzip";
+	private static final String 		HEAD_CONTENT_ENCODING_COMPRESS = "compress";
 	
-	private final HttpServer			server;
+	private final NanoServiceBuilder 	bldr;
 	private final boolean				useHttps;
+	private final boolean				turnOnTrace;
 	private final FileSystemInterface	fsi;
 	private final List<DeploymentKeeper<?>>			deployed = new CopyOnWriteArrayList<>();
 	private final Map<String, NanoContentEncoder>	encoders = new HashMap<>();
 	private final boolean				lockExternalQueries;
+	private volatile HttpServer			server = null;
+	private final LoggerFacade			logger = new SystemErrLoggerFacade(); 
 	private volatile Object[]			passedParameters = new Object[0];
 	private volatile boolean			isStarted = false;	
 	private volatile boolean			isSuspended = false;	
 	
 	NanoServiceWrapper(final NanoServiceBuilder bldr) throws IOException {
-		if (bldr.needUseSSL()) {
-			final HttpsServer	temp = HttpsServer.create(bldr.getSocketAddress(), 0);
-			
-			temp.setHttpsConfigurator(new HttpsConfigurator(bldr.buildSSLContext()));
-			this.server = temp;
-			this.useHttps = true;			
-		}
-		else {
-			this.server = HttpServer.create(bldr.getSocketAddress(), 0);
-			this.useHttps = false;
-		}
-		if (bldr.getExecutorPoolSize() == 0) {
-			this.server.setExecutor(Executors.newCachedThreadPool());
-		}
-		else {
-			this.server.setExecutor(Executors.newFixedThreadPool(bldr.getExecutorPoolSize()));
-		}
-		this.server.createContext("/", (e)->processRequest(e));
+		this.bldr = bldr;
+		this.useHttps = bldr.needUseSSL();
 		this.fsi = FileSystemInterface.Factory.newInstance(bldr.getRoot());
 		this.lockExternalQueries = !bldr.isLocalhostOnly();
+		this.turnOnTrace = bldr.isTraceTurned();
 		
 		for(NanoContentEncoder item : ServiceLoader.<NanoContentEncoder>load(NanoContentEncoder.class)) {
 			for(String encoding : item.getEncodings()) {
@@ -102,6 +107,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			stop();
 		}
 		fsi.close();
+		if (isTraceTurnedOn()) {
+			logger.message(Severity.debug, "Server closed");
+		}
 	}
 	
 	@Override
@@ -110,8 +118,13 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new IllegalStateException("Server is already started");
 		}
 		else {
+			this.server = prepareServer(bldr);
+			
 			isStarted = true;
-			server.start();
+			this.server.start();
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "Server started, port="+bldr.getSocketAddress().getPort());
+			}
 		}
 	}
 
@@ -125,6 +138,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}
 		else {
 			isSuspended = true;
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "Server suspended");
+			}
 		}
 	}
 
@@ -138,6 +154,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}
 		else {
 			isSuspended = false;
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "Server resumed");
+			}
 		}
 	}
 
@@ -147,9 +166,13 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new IllegalStateException("Server is not started or was stopped earlier");
 		}
 		else {
-			server.stop(0);
+			this.server.stop(0);
+			this.server = null;
 			isSuspended = false;
 			isStarted = false;
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "Server stopped");
+			}
 		}
 	}
 
@@ -180,6 +203,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				deployed.add(new DeploymentKeeper<FileSystemInterface>(path.split("/"), (FileSystemInterface)instance2deploy));
 				deployed.sort(DEPLOY_SORT);
 			}
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "File system ["+((FileSystemInterface)instance2deploy).getAbsoluteURI()+"] deployed at ["+path+"]");
+			}
 		}
 		else {
 			synchronized (deployed) {
@@ -188,6 +214,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				
 				deployed.add(new DeploymentKeeper<AnnotationParser<?>>(totalPath.split("/"), ap));
 				deployed.sort(DEPLOY_SORT);
+			}
+			if (isTraceTurnedOn()) {
+				logger.message(Severity.debug, "Servlet class ["+instance2deploy.getClass().getCanonicalName()+"] deployed at ["+path+"]");
 			}
 		}
 	}
@@ -209,9 +238,15 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 						final DeploymentKeeper<?> 	keeper = deployed.remove(index);
 						
 						if (keeper.content instanceof FileSystemInterface) {
+							if (isTraceTurnedOn()) {
+								logger.message(Severity.debug, "File system undeployed from ["+path+"]");
+							}
 							return getServiceRoot().open(path).unmount();
 						}
 						else {
+							if (isTraceTurnedOn()) {
+								logger.message(Severity.debug, "Servlet class undeployed from ["+path+"]");
+							}
 							return keeper.content;
 						}
 					}
@@ -263,10 +298,14 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	protected boolean isHttpsUsed() {
 		return useHttps;
 	}
+	
+	protected boolean isTraceTurnedOn() {
+		return turnOnTrace;
+	}
 
 	private void processRequest(final HttpExchange e) throws IOException {
 		if (isSuspended || lockExternalQueries && !e.getRemoteAddress().getHostName().equals(e.getLocalAddress().getHostName())) {
-			e.sendResponseHeaders(503, 0);
+			sendResponse(e, 503);
 		}
 		else {
 			final String	path = e.getRequestURI().getPath();
@@ -277,30 +316,32 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				if ("GET".equals(e.getRequestMethod())) {
 					try(final FileSystemInterface	fsi = getServiceRoot().clone().open(path)) {
 						if (!fsi.exists()) {
-							e.sendResponseHeaders(404, 0);
+							sendResponse(e, 404);
 						}
 						else {
-							final String	name = fsi.getName(); 
-							
-							try(final InputStream	is = fsi.read();
-								final OutputStream	os = e.getResponseBody()) {
-
-								sendContent(e, name, is, os);
+							try(final OutputStream	os = e.getResponseBody()) {
+								sendContent(e, fsi, os);
 							} catch (Exception exc) {
-								e.sendResponseHeaders(500, 0);
+								sendResponse(e, 500);
 							}
 						}
 					}
 				}
 				else {
-					e.sendResponseHeaders(404, 0);
+					sendResponse(e, 404);
 				}
 			}
  			else if (deployed.content instanceof AnnotationParser<?>) {
- 				((AnnotationParser<?>)deployed.content).processRequest(e, passedParameters);
+				try {
+	 				((AnnotationParser<?>)deployed.content).processRequest(e, passedParameters);
+				} catch (RestServiceException exc) {
+					sendResponse(e, exc.getResponseCode());
+				} catch (Exception exc) {
+					sendResponse(e, 500);
+				}
  			}
  			else {	
-				e.sendResponseHeaders(500, 0);
+				sendResponse(e, 500);
 			}
 		}
 	}
@@ -327,28 +368,92 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		return result[0];
 	}
 	
-	private void sendContent(final HttpExchange e, final String name, final InputStream is, final OutputStream os) throws IOException {
-		final List<String>	availableEncodings = e.getRequestHeaders().get(ACCEPT_ENCODING);
+	private void sendResponse(final HttpExchange e, final int rc) throws IOException {
+		printDebug(e, rc);
+		e.sendResponseHeaders(rc, 0);
+		try(final OutputStream	os = e.getResponseBody()) {
+			os.flush();
+		}
+	}
+
+	private void sendContent(final HttpExchange e, final FileSystemInterface fsi, final OutputStream os) throws IOException {
+		final List<String>	availableEncodings = e.getRequestHeaders().get(HEAD_ACCEPT_ENCODING);
+		final MimeType[]	possibleType = defineMimeByExtension(fsi.getName());
+		final MimeType		selectedMime = possibleType == null || possibleType.length == 0 ? MimeType.MIME_PLAIN_TEXT : possibleType[0]; 
 		final Set<String> 	encodings;
 		
 		if (availableEncodings == null || (encodings = extractEncoding(availableEncodings)).isEmpty()) {
-			e.sendResponseHeaders(200, 0);
-			Utils.copyStream(is, os);				
+			sendRawContent(e, fsi, selectedMime, os);
 		}
 		else {
 			for(Entry<String, NanoContentEncoder> item : encoders.entrySet()) {
 				if (encodings.contains(item.getKey())) {
-					e.getResponseHeaders().add(CONTENT_ENCODING, item.getKey());
+					printDebug(e, 200);
+					e.getResponseHeaders().add(HEAD_CONTENT_TYPE, selectedMime.toString());
+					e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, item.getKey());
 					e.sendResponseHeaders(200, 0);
-					Utils.copyStream(is, item.getValue().encode(os, item.getKey()));
+					
+					try(final InputStream	is = fsi.read();
+						final OutputStream	decode = item.getValue().encode(os, item.getKey())) {
+						
+						Utils.copyStream(is, decode);				
+					}
 					return;
 				}
 			}
-			e.sendResponseHeaders(200, 0);
-			Utils.copyStream(is, os);				
+			sendRawContent(e, fsi, selectedMime, os);
 		}
 	}
 
+	private void sendRawContent(final HttpExchange e, final FileSystemInterface fsi, final MimeType contentType, final OutputStream os) throws IOException {
+		final long	length = (long) fsi.getAttributes().get(DataWrapperInterface.ATTR_SIZE);
+		
+		printDebug(e, 200);
+		e.getResponseHeaders().add(HEAD_CONTENT_TYPE, contentType.toString());
+		e.getResponseHeaders().add(HEAD_CONTENT_LENGTH, String.valueOf(length));
+		e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, HEAD_CONTENT_ENCODING_IDENTITY);
+		e.sendResponseHeaders(200, length);
+		try(final InputStream	is = fsi.read()) {
+			Utils.copyStream(is, os);				
+		}
+	}	
+	
+	private void sendContent(final HttpExchange e, final String name, final InputStream is, final OutputStream os) throws IOException {
+		final List<String>	availableEncodings = e.getRequestHeaders().get(HEAD_ACCEPT_ENCODING);
+		final Set<String> 	encodings;
+		
+//		handler.getResponseHeaders().add(HEAD_CONTENT_TYPE, MimeType.MIME_PLAIN_TEXT.toString());
+//		handler.getResponseHeaders().add(HEAD_CONTENT_LENGTH, String.valueOf(answer.length));
+//		handler.getResponseHeaders().add(HEAD_CONTENT_ENCODING, HEAD_CONTENT_ENCODING_IDENTITY);
+//		
+		
+		if (availableEncodings == null || (encodings = extractEncoding(availableEncodings)).isEmpty()) {
+			printDebug(e, 200);
+			e.sendResponseHeaders(200, 0);
+			System.err.println("len1="+Utils.copyStream(is, os));				
+		}
+		else {
+			for(Entry<String, NanoContentEncoder> item : encoders.entrySet()) {
+				if (encodings.contains(item.getKey())) {
+					printDebug(e, 200);
+					e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, item.getKey());
+					e.sendResponseHeaders(200, 0);
+					System.err.println("len2="+Utils.copyStream(is, item.getValue().encode(os, item.getKey())));
+					return;
+				}
+			}
+			printDebug(e, 200);
+			e.sendResponseHeaders(200, 0);
+			System.err.println("len3="+Utils.copyStream(is, os));				
+		}
+	}
+
+	private void printDebug(final HttpExchange e, final int rc) throws IOException {
+		if (isTraceTurnedOn()) {
+			logger.message(Severity.debug, "Method: "+e.getRequestMethod()+", path="+e.getRequestURI()+" returned "+rc);
+		}
+	}
+	
 	private Set<String> extractEncoding(final List<String> readedEncodings) {
 		final Set<String>	result = new HashSet<>();
 		
@@ -370,6 +475,27 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}		
 	}
 
+	private HttpServer prepareServer(final NanoServiceBuilder bldr) throws IOException {
+		final HttpServer	result;
+		
+		if (bldr.needUseSSL()) {
+			final HttpsServer	temp = HttpsServer.create(bldr.getSocketAddress(), 0);
+			
+			temp.setHttpsConfigurator(new HttpsConfigurator(bldr.buildSSLContext()));
+			result = temp;
+		}
+		else {
+			result = HttpServer.create(bldr.getSocketAddress(), 0);
+		}
+		if (bldr.getExecutorPoolSize() == 0) {
+			result.setExecutor(Executors.newCachedThreadPool());
+		}
+		else {
+			result.setExecutor(Executors.newFixedThreadPool(bldr.getExecutorPoolSize()));
+		}
+		result.createContext("/", (e)->processRequest(e));
+		return result;
+	}
 	
 	static class DeploymentKeeper<T> {
 		final String[]	path;
