@@ -1,11 +1,16 @@
 package chav1961.nanohttp;
 
+
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
-import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
+import java.util.regex.Pattern;
 
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.JMX;
@@ -23,6 +28,8 @@ import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
 
+import chav1961.nanohttp.internal.ConsoleParser;
+import chav1961.nanohttp.internal.ModeList;
 import chav1961.nanohttp.server.NanoServiceBuilder;
 import chav1961.nanohttp.server.NanoServiceWrapper;
 import chav1961.nanohttp.server.jmx.JmxManager;
@@ -37,8 +44,7 @@ public class Application {
 	public static final String		ARG_DEBUG = "d";
 	public static final String		ARG_CONFIG_FILE = "conf";
 	public static final String		JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
-	
-	
+
 	public static void main(String[] args) {
 		final ApplicationArgParser		ap = new ApplicationArgParser();
 		
@@ -52,6 +58,7 @@ public class Application {
 				final CountDownLatch		latch = new CountDownLatch(1);
 				final JmxManager			mgr = new JmxManager(wrapper, latch);
 				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
+				final Thread				deployThread = new Thread(()->processInput(wrapper, System.in));
 				
 				server.registerMBean(mgr, jmxName);
 				Runtime.getRuntime().addShutdownHook(new Thread(()->{
@@ -61,12 +68,16 @@ public class Application {
 						e.printStackTrace();
 					}
 				}));
-				wrapper.start(); 
+				wrapper.start();
+				deployThread.setDaemon(true);
+				deployThread.start();
 				
 				try {
 					latch.await();
 				} catch (InterruptedException e) {
 					throw new IOException(e);
+				} finally {
+					System.in.close();
 				}
 			}
 			else {
@@ -106,6 +117,24 @@ public class Application {
 		} catch (IOException | MalformedObjectNameException | InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException | AttachNotSupportedException e) {
 			e.printStackTrace();
 			System.exit(129);
+		}
+	}
+
+	private static void processInput(final NanoServiceWrapper owner, final InputStream in) {
+		try(final Reader			rdr = new InputStreamReader(in);
+			final BufferedReader	brdr = new BufferedReader(rdr)) {
+			final ConsoleParser		cp = new ConsoleParser(owner);
+			String 	line;
+			
+			while ((line = brdr.readLine())  != null) {
+				try {
+					cp.processConsoleInput(line);
+				} catch (CommandLineParametersException e) {
+					System.err.println(e.getLocalizedMessage());
+				}
+			}
+		} catch (IOException e) {
+			System.err.println(e.getLocalizedMessage());
 		}
 	}
 

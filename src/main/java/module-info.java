@@ -7,9 +7,11 @@ module chav1961.nanohttp {
 	requires com.google.gson;
 	requires java.mail;
 	requires jdk.attach;
+	requires org.commonmark;
 	
 	exports chav1961.nanohttp;
 	exports chav1961.nanohttp.server;
+	exports chav1961.nanohttp.server.exceptions;
 	exports chav1961.nanohttp.server.interfaces;
 
 	uses chav1961.nanohttp.server.interfaces.NanoClassSerializer;

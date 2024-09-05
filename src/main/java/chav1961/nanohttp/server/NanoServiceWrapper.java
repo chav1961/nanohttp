@@ -1,18 +1,15 @@
 package chav1961.nanohttp.server;
 
-
-
-
 import java.io.Closeable;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Reader;
+import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.URLConnection;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,9 +29,11 @@ import com.sun.net.httpserver.HttpsServer;
 
 import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoContentEncoder;
+import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
 import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.nanohttp.server.parser.AnnotationParser;
 import chav1961.purelib.basic.MimeType;
+import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.SystemErrLoggerFacade;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.ContentException;
@@ -377,77 +376,73 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	}
 
 	private void sendContent(final HttpExchange e, final FileSystemInterface fsi, final OutputStream os) throws IOException {
-		final List<String>	availableEncodings = e.getRequestHeaders().get(HEAD_ACCEPT_ENCODING);
 		final MimeType[]	possibleType = defineMimeByExtension(fsi.getName());
-		final MimeType		selectedMime = possibleType == null || possibleType.length == 0 ? MimeType.MIME_PLAIN_TEXT : possibleType[0]; 
+		final MimeType		sourceMime = possibleType == null || possibleType.length == 0 ? MimeType.MIME_PLAIN_TEXT : possibleType[0]; 
+		final List<String>	availableType = e.getRequestHeaders().get(HEAD_ACCEPT);
+		final MimeType		targetMime = availableType == null || availableType.isEmpty() ? MimeType.MIME_PLAIN_TEXT : toMimeType(availableType.get(0)); 
+		final List<String>	availableEncodings = e.getRequestHeaders().get(HEAD_ACCEPT_ENCODING);
 		final Set<String> 	encodings;
 		
 		if (availableEncodings == null || (encodings = extractEncoding(availableEncodings)).isEmpty()) {
-			sendRawContent(e, fsi, selectedMime, os);
+			sendRawContent(e, fsi, sourceMime, os, targetMime, bldr);
 		}
 		else {
 			for(Entry<String, NanoContentEncoder> item : encoders.entrySet()) {
 				if (encodings.contains(item.getKey())) {
 					printDebug(e, 200);
-					e.getResponseHeaders().add(HEAD_CONTENT_TYPE, selectedMime.toString());
+					e.getResponseHeaders().add(HEAD_CONTENT_TYPE, targetMime.toString());
 					e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, item.getKey());
 					e.sendResponseHeaders(200, 0);
 					
 					try(final InputStream	is = fsi.read();
 						final OutputStream	decode = item.getValue().encode(os, item.getKey())) {
-						
-						Utils.copyStream(is, decode);				
+						serializeRawContent(is, sourceMime, decode, targetMime, bldr);
 					}
 					return;
 				}
 			}
-			sendRawContent(e, fsi, selectedMime, os);
+			sendRawContent(e, fsi, sourceMime, os, targetMime, bldr);
 		}
 	}
 
-	private void sendRawContent(final HttpExchange e, final FileSystemInterface fsi, final MimeType contentType, final OutputStream os) throws IOException {
+	private void sendRawContent(final HttpExchange e, final FileSystemInterface fsi, final MimeType sourceMime, final OutputStream os, final MimeType targetMime, final NanoServiceBuilder props) throws IOException {
 		final long	length = (long) fsi.getAttributes().get(DataWrapperInterface.ATTR_SIZE);
 		
 		printDebug(e, 200);
-		e.getResponseHeaders().add(HEAD_CONTENT_TYPE, contentType.toString());
+		e.getResponseHeaders().add(HEAD_CONTENT_TYPE, targetMime.toString());
 		e.getResponseHeaders().add(HEAD_CONTENT_LENGTH, String.valueOf(length));
 		e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, HEAD_CONTENT_ENCODING_IDENTITY);
 		e.sendResponseHeaders(200, length);
 		try(final InputStream	is = fsi.read()) {
-			Utils.copyStream(is, os);				
+			serializeRawContent(is, sourceMime, os, targetMime, props);
 		}
 	}	
-	
-	private void sendContent(final HttpExchange e, final String name, final InputStream is, final OutputStream os) throws IOException {
-		final List<String>	availableEncodings = e.getRequestHeaders().get(HEAD_ACCEPT_ENCODING);
-		final Set<String> 	encodings;
-		
-//		handler.getResponseHeaders().add(HEAD_CONTENT_TYPE, MimeType.MIME_PLAIN_TEXT.toString());
-//		handler.getResponseHeaders().add(HEAD_CONTENT_LENGTH, String.valueOf(answer.length));
-//		handler.getResponseHeaders().add(HEAD_CONTENT_ENCODING, HEAD_CONTENT_ENCODING_IDENTITY);
-//		
-		
-		if (availableEncodings == null || (encodings = extractEncoding(availableEncodings)).isEmpty()) {
-			printDebug(e, 200);
-			e.sendResponseHeaders(200, 0);
-			System.err.println("len1="+Utils.copyStream(is, os));				
+
+	private void serializeRawContent(final InputStream is, final MimeType sourceMime, final OutputStream os, final MimeType targetMime, final NanoServiceBuilder props) throws IOException {
+		if (targetMime.containerOf(sourceMime)) {
+			Utils.copyStream(is, os);				
 		}
 		else {
-			for(Entry<String, NanoContentEncoder> item : encoders.entrySet()) {
-				if (encodings.contains(item.getKey())) {
-					printDebug(e, 200);
-					e.getResponseHeaders().add(HEAD_CONTENT_ENCODING, item.getKey());
-					e.sendResponseHeaders(200, 0);
-					System.err.println("len2="+Utils.copyStream(is, item.getValue().encode(os, item.getKey())));
-					return;
+			for (NanoContentSerializer ser : ServiceLoader.load(NanoContentSerializer.class)) {
+				if (ser.canServe(sourceMime, targetMime)) {
+					if (ser.isOutputStreamSupported()) {
+						Utils.copyStream(is, ser.serialize(os, sourceMime, targetMime, props));
+						return;
+					}
+					else if (ser.isWriterSupported()) {
+						final Reader	rdr = new InputStreamReader(is);
+						final Writer	wr = new OutputStreamWriter(os);
+						
+						Utils.copyStream(rdr, ser.serialize(wr, sourceMime, targetMime, props));
+						return;
+					}
 				}
 			}
-			printDebug(e, 200);
-			e.sendResponseHeaders(200, 0);
-			System.err.println("len3="+Utils.copyStream(is, os));				
+			Utils.copyStream(is, os);				
 		}
 	}
-
+	
+	
 	private void printDebug(final HttpExchange e, final int rc) throws IOException {
 		if (isTraceTurnedOn()) {
 			logger.message(Severity.debug, "Method: "+e.getRequestMethod()+", path="+e.getRequestURI()+" returned "+rc);
@@ -472,12 +467,16 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			return new MimeType[] {MimeType.MIME_CREOLE_TEXT};
 		}
 		else {
-			try {
-				return new MimeType[] {MimeType.valueOf(URLConnection.getFileNameMap().getContentTypeFor(fileName))};
-			} catch (MimeParseException | IllegalArgumentException e) {
-				return EMPTY_MIMES;
-			}		
+			return new MimeType[] {toMimeType(URLConnection.getFileNameMap().getContentTypeFor(fileName))};
 		}
+	}
+	
+	private static MimeType toMimeType(final String mime) {
+		try {
+			return MimeType.valueOf(mime);
+		} catch (MimeParseException | IllegalArgumentException e) {
+			return MimeType.MIME_PLAIN_TEXT;
+		}		
 	}
 
 	private HttpServer prepareServer(final NanoServiceBuilder bldr) throws IOException {
