@@ -7,7 +7,6 @@ import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
 import chav1961.purelib.concurrent.interfaces.ExecutionControl;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
-import chav1961.purelib.nanoservice.NanoServiceFactory;
 
 /**
  * <p>This interface describes any Nano services in the Pure Library. It supports {@linkplain ExecutionControl} life cycle of the Nano service,
