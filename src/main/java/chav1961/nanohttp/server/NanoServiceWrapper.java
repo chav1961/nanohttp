@@ -343,6 +343,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				sendResponse(e, 500);
 			}
 		}
+		e.close();
 	}
 
 	private boolean isDeployed(final String path) {
