@@ -2,36 +2,71 @@
 
 ### Общее описание
 
-Данный репозитарий содержит обертку над небезызвестным Java-классом [com.sun.net.httpserver.HttpServer](https://docs.oracle.com/javase/8/docs/jre/api/net/httpserver/spec/com/sun/net/httpserver/HttpServer.html), который можно исопльзовать в качесвте простого WEB-сервера. Помимо обычной функциональности HTTP-сервера, обертка поддерживает несколько дополнительных возможности:
+Данный репозитарий содержит обертку над небезызвестным Java-классом [com.sun.net.httpserver.HttpServer](https://docs.oracle.com/javase/8/docs/jre/api/net/httpserver/spec/com/sun/net/httpserver/HttpServer.html), который можно исопльзовать в качестве простого WEB-сервера. Обертка запускается как обычное приложение, не требует предварительной установки, практически не требует администрирования, и позволяет во многих случаях обойтись без полноценного WEB-программирования. 
+
+Помимо обычной функциональности HTTP-сервера (включая поддержку защищенных протоколов обмена), обертка поддерживает несколько дополнительных возможностей:
 
 - дерево статических страниц сайта (на основе интерфейса файловой системы моей библиотеки [Pure Library](https://github.com/chav1961/purelib) )
-- простейший OpenAPI интерфейс, на основе документа [JSR-311](https://jcp.org/en/jsr/detail?id=311), позволяющий писать для сервера легковесные плагины
+- простейший OpenAPI интерфейс (на основе документа [JSR-311](https://jcp.org/en/jsr/detail?id=311), позволяющий писать для сервера легковесные плагины - аналоги REST-сервисов)
 - JMX-интерфейс для управления сервером
 
-Параметры запуска проекта следующие:
+Параметры запуска обертки следующие:
 
-> java -jar nanohttp.jar <стандартные аргументы> \[-startPipe] \[-join PART] \[-append URI URI URI ...]
+> java -jar nanohttp.jar [<режим>] -conf URI \[-appDir URI] \[-d]
 
-ss
+где:
+- **режим** - режим управления сервером. Допустимы следующие значения:
+    - *start* - запустить ранее остановленный сервер
+    - *suspend* - временно запретить прием и обработку HTTP-запросов сервером
+    - *resume* - возобновить прием и обработку HTTP-запросов сервером
+    -	*stop* - остановить ранее запущенный сервер
+    -	*terminateAndExit* - остановить ранее запущенный сервер и завершить его работу как приложения
+- **-conf** - URI источника конфигурации (например, файла).
+- **-appDir** - директория
+- **-d** - флаг включения отладочного вывода в поток System.err
+
+При первоначальном запуске сервера никакой режим управления сервером не должен задаваться. Все режимы используются только для управления уже запущенным сервером.
+
+Ичточник конфгурации сервера может иметь любую природу и должен содержать в себе данные в формате, совместимом с Java-классом [java.util.Properties](https://en.wikipedia.org/wiki/.properties). Список допустимых
+ключей конфигурации приведен в таблице:
 
 | ddddd | ddddd | ddddd |
 |------|-------|-------|
-|nanoservicePort | | |
-|nanoserviceRoot | | |
-|nanoserviceLocalhostOnly | true | |
-|nanoserviceExecutorPoolSize | 10 | |
-|nanoserviceDisableLoopback | true | |
+|nanoservicePort | | порт, на котором следует поднять сервер |
+|nanoserviceRoot | | URI файловой системы, которая будет использована в качестве *корня* сайта |
+|nanoserviceLocalhostOnly | true | разрешает обработку запросов только с того же компьютера, на котором запущен сам сервер |
+|nanoserviceExecutorPoolSize | 10 | размер пула потоков для обработки запросов к серверу |
+|nanoserviceDisableLoopback | true | отключение возможности обработки эхо-запросов (эхо-запросы бывают полезны при отладке) |
 |nanoserviceTemporaryCacheSize | | |
-|nanoserviceCreolePrologueURI | | |
-|nanoserviceCreoleEpilogueURI | | |
-|nanoserviceUseSSL | TLS | |
-|nanoserviceUseKeyStore | | |
-|nanoserviceSSLKeyStore | | |
-|nanoserviceSSLKeyStoreType | | |
-|nanoserviceSSLKeyStorePasswd | | |
-|nanoserviceUseTrustStore | SunX509 | |
-|nanoserviceSSLTrustStore | | |
-|nanoserviceSSLTrustStoreType | | |
-|nanoserviceSSLTrustStorePasswd | | |
+|nanoserviceCreolePrologueURI | | URI источника данных, вставляемых при автоматической генерации страниц сайта для Creole-страниц |
+|nanoserviceCreoleEpilogueURI | | URI источника данных, вставляемых при автоматической генерации страниц сайта для Creole-страниц |
+|nanoserviceUseSSL |  | разрешает использование защищенного протокола (SSL, TLS) |
+|nanoserviceUseKeyStore | false | |
+|nanoserviceSSLKeyStore | | местоположения хранилища ключей |
+|nanoserviceSSLKeyStoreType | | тип хранилища ключей |
+|nanoserviceSSLKeyStorePasswd | | пароль хранилища ключей |
+|nanoserviceUseTrustStore | false | |
+|nanoserviceSSLTrustStore | | мстоположение хранилища доверенных сертификатов |
+|nanoserviceSSLTrustStoreType | | тип хранилища доверенных сертификатов |
+|nanoserviceSSLTrustStorePasswd | | пароль хранилища доверенных сертификатов |
 
-s
+
+
+### Настройка статической части сайта
+
+ddd
+
+### Написание плагинов для сервера
+
+sss
+
+### Управление сервером через JMX-соединение
+
+Управление сервером через JMX-соединение может выполняться любым JMX-клиентом (например, стандартной консолью Java **jconsole**). Имя JMX-соединения:
+
+> chav1961.nanohttp:type=basic,name=server
+
+вв
+
+
+
