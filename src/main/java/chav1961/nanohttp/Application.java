@@ -10,7 +10,6 @@ import java.io.Reader;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.util.concurrent.CountDownLatch;
-import java.util.regex.Pattern;
 
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.JMX;
@@ -163,7 +162,7 @@ public class Application {
 		private static final ArgParser.AbstractArg[]	KEYS = {
 			new EnumArg<ModeList>(ARG_MODE, ModeList.class, false, true, "Service control mode. Can be used after service startup only. To startup service, do not type this argument"),
 			new ConfigArg(ARG_CONFIG_FILE, true, false, "Config file location. Can be absolute/relative file path or any URI"),
-			new FileArg(ARG_APP_DIR, FileType.DIRECTORY_ONLY, true, true, "Application directory"),
+			new FileArg(ARG_APP_DIR, FileType.DIRECTORY_ONLY, true, false, "Application directory"),
 			new BooleanArg(ARG_DEBUG, false, "Turn on debug trace", false)
 		};
 		
