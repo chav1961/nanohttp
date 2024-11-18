@@ -31,6 +31,7 @@ public class MultipartClassSerializer implements NanoClassSerializer {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T deserialize(final InputStream is, final Class<T> awaited) throws IOException {
 		if (!MimeBodyPart.class.isAssignableFrom(awaited)) {

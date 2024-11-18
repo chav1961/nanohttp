@@ -6,9 +6,7 @@ import java.io.OutputStream;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
 
 import org.commonmark.node.Node;
@@ -18,7 +16,6 @@ import org.commonmark.renderer.html.HtmlRenderer;
 import chav1961.nanohttp.server.NanoServiceBuilder;
 import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
 import chav1961.purelib.basic.MimeType;
-import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.EnvironmentException;
 import chav1961.purelib.enumerations.MarkupOutputFormat;
 import chav1961.purelib.streams.char2char.CreoleWriter;
@@ -99,6 +96,7 @@ public class TextContentSerializer implements NanoContentSerializer {
 		throw new UnsupportedOperationException("Output stream serialization is not supported");
 	}
 	
+	@SuppressWarnings("deprecation")
 	private static Writer creole2Html(final Writer os, final NanoServiceBuilder props) {
 		try {
 			return new CreoleWriter(os, MarkupOutputFormat.XML2HTML);
@@ -107,6 +105,7 @@ public class TextContentSerializer implements NanoContentSerializer {
 		}
 	}
 
+	@SuppressWarnings("deprecation")
 	private static Writer creole2Plain(final Writer os, final NanoServiceBuilder props) {
 		try {
 			return new CreoleWriter(os, MarkupOutputFormat.XML2TEXT);

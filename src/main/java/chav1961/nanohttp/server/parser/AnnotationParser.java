@@ -16,7 +16,6 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +26,6 @@ import javax.ws.rs.DefaultValue;
 import javax.ws.rs.FormParam;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.MatrixParam;
-import javax.ws.rs.NotFoundException;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -37,7 +35,6 @@ import com.sun.net.httpserver.HttpExchange;
 
 import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoClassSerializer;
-import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
 import chav1961.purelib.basic.MimeType;
 import chav1961.purelib.basic.URIUtils;
 import chav1961.purelib.basic.Utils;
@@ -56,6 +53,7 @@ public class AnnotationParser<T> {
 	private final CallDescriptor[][] methods;
 	private final String rootPath;
 	
+	@SuppressWarnings("unchecked")
 	public AnnotationParser(final T inst, final String rootPrefix) {
 		if (inst == null) {
 			throw new NullPointerException("Instance to parse can't be null");
@@ -387,6 +385,7 @@ public class AnnotationParser<T> {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	private static <T> T getValueByClass(final HttpExchange rq, final Class<T> cl, final Object[] content) throws IOException {
 		for(int index = 0; index < content.length; index++) {
 			if (cl.isInstance(content[index])) {
@@ -396,6 +395,7 @@ public class AnnotationParser<T> {
 		throw new RestServiceException(415);
 	}
 	
+	@SuppressWarnings("unchecked")
 	private static <T> T getValueByClass(final HttpExchange rq, final Class<T> cl, final Object[] content, final NanoClassSerializer serializer) throws IOException {
 		for(int index = 0; index < content.length; index++) {
 			if (cl.isInstance(content[index])) {
@@ -473,13 +473,14 @@ public class AnnotationParser<T> {
 			}
 		}
 		
+		@SuppressWarnings("unchecked")
 		<T> T cast(final String value) {
 			return (T) convertor.apply(value, available[0]); 
 		}
 	}
 	
 	private static class CallDescriptor {
-		final RequestType 		type;
+//		final RequestType 		type;
 		final String[] 			pathTemplate;
 		final MethodHandle 		mh;
 		final Extractor[] 		parms;
@@ -487,7 +488,7 @@ public class AnnotationParser<T> {
 		final NanoClassSerializer	responseSerializer;
 		
 		private CallDescriptor(final RequestType type, final String pathTemplate, final Extractor[] parms, final MethodHandle mh, final boolean noResponse, final NanoClassSerializer responseSerializer) {
-			this.type = type;
+//			this.type = type;
 			this.pathTemplate = pathTemplate.split("/");
 			this.mh = mh;
 			this.parms = parms;

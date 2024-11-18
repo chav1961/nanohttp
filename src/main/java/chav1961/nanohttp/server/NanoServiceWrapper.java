@@ -33,7 +33,6 @@ import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
 import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.nanohttp.server.parser.AnnotationParser;
 import chav1961.purelib.basic.MimeType;
-import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.SystemErrLoggerFacade;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.ContentException;
@@ -66,12 +65,12 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	private static final String 		HEAD_CONTENT_LENGTH = "Content-Length";
 	private static final String 		HEAD_CONTENT_TYPE = "Content-type";
 	private static final String 		HEAD_ACCEPT = "Accept"; 	
-	private static final String 		HEAD_ACCEPT_CHARSET = "Accept-charset"; 	
-	private static final MimeType[]		EMPTY_MIMES = new MimeType[0];
+//	private static final String 		HEAD_ACCEPT_CHARSET = "Accept-charset"; 	
+//	private static final MimeType[]		EMPTY_MIMES = new MimeType[0];
 
 	private static final String 		HEAD_CONTENT_ENCODING_IDENTITY = "identity";
-	private static final String 		HEAD_CONTENT_ENCODING_GZIP = "gzip";
-	private static final String 		HEAD_CONTENT_ENCODING_COMPRESS = "compress";
+//	private static final String 		HEAD_CONTENT_ENCODING_GZIP = "gzip";
+//	private static final String 		HEAD_CONTENT_ENCODING_COMPRESS = "compress";
 	
 	private final NanoServiceBuilder 	bldr;
 	private final boolean				useHttps;
