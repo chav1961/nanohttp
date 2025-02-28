@@ -13,6 +13,7 @@ import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 
 import javax.management.InstanceAlreadyExistsException;
+import javax.management.InstanceNotFoundException;
 import javax.management.JMX;
 import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServer;
@@ -43,6 +44,7 @@ import chav1961.purelib.basic.exceptions.ContentException;
 public class Application {
 	public static final String		ARG_MODE = "mode";
 	public static final String		ARG_APP_DIR = "appdir";
+	public static final String		ARG_JMX_ENABLE = "jmx";
 	public static final String		ARG_DEBUG = "d";
 	public static final String		ARG_CONFIG_FILE = "conf";
 	public static final String		JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
@@ -61,8 +63,10 @@ public class Application {
 				final JmxManager			mgr = new JmxManager(wrapper, latch);
 				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
 				final Thread				deployThread = new Thread(()->processInput(wrapper, System.in));
-				
-				server.registerMBean(mgr, jmxName);
+
+				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
+					server.registerMBean(mgr, jmxName);
+				}
 				Runtime.getRuntime().addShutdownHook(new Thread(()->{
 					try{wrapper.stop();
 						wrapper.close();
@@ -83,6 +87,9 @@ public class Application {
 				
 				try {
 					latch.await();
+					if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
+						server.unregisterMBean(jmxName);
+					}
 				} catch (InterruptedException e) {
 					throw new IOException(e);
 				} finally {
@@ -123,7 +130,7 @@ public class Application {
 			System.err.println(exc.getLocalizedMessage());
 			System.err.println(ap.getUsage("nanohttp"));
 			System.exit(128);
-		} catch (IOException | MalformedObjectNameException | InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException | AttachNotSupportedException e) {
+		} catch (IOException | MalformedObjectNameException | InstanceNotFoundException | InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException | AttachNotSupportedException e) {
 			e.printStackTrace();
 			System.exit(129);
 		}
@@ -173,7 +180,8 @@ public class Application {
 			new EnumArg<ModeList>(ARG_MODE, ModeList.class, false, true, "Service control mode. Can be used after service startup only. To startup service, do not type this argument"),
 			new ConfigArg(ARG_CONFIG_FILE, true, false, "Config file location. Can be absolute/relative file path or any URI"),
 			new FileArg(ARG_APP_DIR, FileType.DIRECTORY_ONLY, true, false, "Application directory"),
-			new BooleanArg(ARG_DEBUG, false, "Turn on debug trace", false)
+			new BooleanArg(ARG_DEBUG, false, "Turn on debug trace", false),
+			new BooleanArg(ARG_JMX_ENABLE, false, "Turn on JMX to control the service", false)
 		};
 		
 		private ApplicationArgParser() {

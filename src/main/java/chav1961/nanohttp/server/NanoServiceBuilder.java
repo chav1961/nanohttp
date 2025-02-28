@@ -111,6 +111,10 @@ public class NanoServiceBuilder {
 	public static NanoServiceBuilder newInstance() {
 		return new NanoServiceBuilder();
 	}
+
+	public static NanoServiceBuilder of() {
+		return new NanoServiceBuilder();
+	}
 	
 	public static NanoServiceBuilder of(final SubstitutableProperties props) {
 		return new NanoServiceBuilder(props, true);
