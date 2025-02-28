@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
+import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 
 import javax.management.InstanceAlreadyExistsException;
@@ -31,11 +32,13 @@ import chav1961.nanohttp.internal.ConsoleParser;
 import chav1961.nanohttp.internal.ModeList;
 import chav1961.nanohttp.server.NanoServiceBuilder;
 import chav1961.nanohttp.server.NanoServiceWrapper;
+import chav1961.nanohttp.server.interfaces.NanoSPIPlugin;
 import chav1961.nanohttp.server.jmx.JmxManager;
 import chav1961.nanohttp.server.jmx.JmxManagerMBean;
 import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
+import chav1961.purelib.basic.exceptions.ContentException;
 
 public class Application {
 	public static final String		ARG_MODE = "mode";
@@ -68,6 +71,13 @@ public class Application {
 					}
 				}));
 				wrapper.start();
+				for(NanoSPIPlugin item : ServiceLoader.load(NanoSPIPlugin.class)) {
+					try {
+						wrapper.deploy(item.getPath(), item.getPlugin());
+					} catch (ContentException e) {
+						e.printStackTrace();
+					}
+				}
 				deployThread.setDaemon(true);
 				deployThread.start();
 				

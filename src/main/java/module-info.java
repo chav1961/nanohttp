@@ -14,6 +14,8 @@ module chav1961.nanohttp {
 	exports chav1961.nanohttp.server.exceptions;
 	exports chav1961.nanohttp.server.interfaces;
 
+	uses chav1961.nanohttp.server.interfaces.NanoSPIPlugin;
+	
 	uses chav1961.nanohttp.server.interfaces.NanoClassSerializer;
 	provides chav1961.nanohttp.server.interfaces.NanoClassSerializer with 
 			chav1961.nanohttp.server.serializers.StringClassSerializer,
