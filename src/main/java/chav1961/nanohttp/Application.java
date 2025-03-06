@@ -9,8 +9,14 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchService;
 import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Consumer;
 
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.InstanceNotFoundException;
@@ -30,6 +36,8 @@ import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
 
 import chav1961.nanohttp.internal.ConsoleParser;
+import chav1961.nanohttp.internal.DeploymentMode;
+import chav1961.nanohttp.internal.DeploymentRepo;
 import chav1961.nanohttp.internal.ModeList;
 import chav1961.nanohttp.server.NanoServiceBuilder;
 import chav1961.nanohttp.server.NanoServiceWrapper;
@@ -39,7 +47,6 @@ import chav1961.nanohttp.server.jmx.JmxManagerMBean;
 import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
-import chav1961.purelib.basic.exceptions.ContentException;
 
 public class Application {
 	public static final String		ARG_MODE = "mode";
@@ -49,6 +56,9 @@ public class Application {
 	public static final String		ARG_CONFIG_FILE = "conf";
 	public static final String		JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
 
+	private static final String		DEPLOYER_NAME = "App dir deployer";
+	private static final String		CONSOLE_DEPLOYER_NAME = "Console deploy thread";
+	
 	public static void main(String[] args) {
 		final ApplicationArgParser		ap = new ApplicationArgParser();
 		
@@ -59,14 +69,12 @@ public class Application {
 
 			if (!parsed.isTyped(ARG_MODE)) {
 				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build();
+				final ConsoleParser			cp = new ConsoleParser(wrapper);
 				final CountDownLatch		latch = new CountDownLatch(1);
 				final JmxManager			mgr = new JmxManager(wrapper, latch);
 				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
-				final Thread				deployThread = new Thread(()->processInput(wrapper, System.in));
+				final Thread				deployThread = new Thread(()->processInput(wrapper, cp, System.in));
 
-				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
-					server.registerMBean(mgr, jmxName);
-				}
 				Runtime.getRuntime().addShutdownHook(new Thread(()->{
 					try{wrapper.stop();
 						wrapper.close();
@@ -74,16 +82,20 @@ public class Application {
 						e.printStackTrace();
 					}
 				}));
-				wrapper.start();
-				for(NanoSPIPlugin item : ServiceLoader.load(NanoSPIPlugin.class)) {
-					try {
-						wrapper.deploy(item.getPath(), item.getPlugin());
-					} catch (ContentException e) {
-						e.printStackTrace();
-					}
+				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
+					server.registerMBean(mgr, jmxName);
 				}
+				wrapper.start();
+				
+				walkServices(Thread.currentThread().getContextClassLoader(), (p)->deploy(cp, p, Thread.currentThread().getContextClassLoader()));
+
+				deployThread.setName(CONSOLE_DEPLOYER_NAME);
 				deployThread.setDaemon(true);
 				deployThread.start();
+
+				if (parsed.isTyped(ARG_APP_DIR)) {
+					startAppDirListener(cp, parsed.getValue(ARG_APP_DIR, File.class));
+				}
 				
 				try {
 					latch.await();
@@ -136,10 +148,85 @@ public class Application {
 		}
 	}
 
-	private static void processInput(final NanoServiceWrapper owner, final InputStream in) {
+	private static void deploy(final ConsoleParser cp, final NanoSPIPlugin p, final ClassLoader loader) {
+		try {
+			cp.processConsoleInput("deploy "+p.getPlugin().getClass().getName()+" "+p.getPath(), loader);
+		} catch (CommandLineParametersException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private static void undeploy(final ConsoleParser cp, final NanoSPIPlugin p, final ClassLoader loader) {
+		try {
+			cp.processConsoleInput("undeploy "+p.getPath(), loader);
+		} catch (CommandLineParametersException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private static void startAppDirListener(final ConsoleParser cp, final File dir) throws IOException {
+		final WatchService 		watcher = FileSystems.getDefault().newWatchService();
+		final Thread			t = new Thread(()->{
+									try (final DeploymentRepo	repo = new DeploymentRepo(dir)) {
+										for(;;) {
+											for(WatchEvent<?> event: watcher.take().pollEvents()) {
+												final WatchEvent<Path> ev = (WatchEvent<Path>)event;
+												
+												if (event.kind() == StandardWatchEventKinds.OVERFLOW) {
+													continue;
+												}
+												else if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
+													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.CREATE);
+												}
+												else if (event.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
+													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.MODIFY);
+												}
+												else if (event.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
+													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.DELETE);
+												}
+											}
+										}
+									} catch (InterruptedException | IOException exc) {
+									}
+								});
+		
+		dir.toPath().register(watcher, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_DELETE, StandardWatchEventKinds.ENTRY_MODIFY);
+		t.setName(DEPLOYER_NAME);
+		t.setDaemon(true);
+		t.start();					
+	}
+	
+	private static void processDeployment(final ConsoleParser cp, final DeploymentRepo repo, final File file, final DeploymentMode mode) throws IOException {
+		switch (mode) {
+			case CREATE	:
+				final ClassLoader	cla = repo.addClassLoader(file); 
+				
+				walkServices(cla, (p)->{deploy(cp, p, cla);});
+				break;
+			case DELETE	:
+				final ClassLoader	cld = repo.getClassLoader(file);
+				
+				walkServices(cld, (p)->{undeploy(cp, p, cld);});
+				repo.removeClassLoader(file);
+				break;
+			case MODIFY	:
+				processDeployment(cp, repo, file, DeploymentMode.DELETE);
+				processDeployment(cp, repo, file, DeploymentMode.CREATE);
+				break;
+			default:
+				throw new UnsupportedOperationException("Deployment mode ["+mode+"] is not supported yet");
+		}
+	}
+
+	private static void walkServices(final ClassLoader loader, final Consumer<NanoSPIPlugin> consumer) {
+		for(NanoSPIPlugin item : ServiceLoader.<NanoSPIPlugin>load(NanoSPIPlugin.class, loader)) {
+			consumer.accept(item);
+		}
+	}
+	
+	private static void processInput(final NanoServiceWrapper owner, final ConsoleParser cp, final InputStream in) {
 		try(final Reader			rdr = new InputStreamReader(in);
 			final BufferedReader	brdr = new BufferedReader(rdr)) {
-			final ConsoleParser		cp = new ConsoleParser(owner);
 			String 	line;
 			
 			while ((line = brdr.readLine())  != null) {
