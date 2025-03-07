@@ -1,20 +1,23 @@
 package chav1961.nanohttp.internal;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import chav1961.nanohttp.server.NanoServiceWrapper;
+import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
 public class ConsoleParser {
-	private static final Pattern	DEPLOY_PATTERN = Pattern.compile("\\s*deploy\\s*([a-zA-Z0-9\\._])\\s*to\\s*(([a-zA-Z0-9\\./_]))");
-	private static final Pattern	UNDEPLOY_PATTERN = Pattern.compile("\\s*undeploy\\s*from\\s*([a-zA-Z0-9\\._])");
+	private static final Pattern	DEPLOY_PATTERN = Pattern.compile("\\s*deploy\\s*(([a-zA-Z0-9\\._])+)\\s*to\\s*(([a-zA-Z0-9\\./_])+)");
+	private static final Pattern	UNDEPLOY_PATTERN = Pattern.compile("\\s*undeploy\\s*from\\s*(([a-zA-Z0-9\\./_])+)");
 	private static final Pattern	LIST_DEPLOYMENTS_PATTERN = Pattern.compile("\\s*list\\s*");
 	private static final Pattern	RESTART_SERVER_PATTERN = Pattern.compile("\\s*restart\\s*");
 	private static final Pattern	START_SERVER_PATTERN = Pattern.compile("\\s*start\\s*");
@@ -23,57 +26,86 @@ public class ConsoleParser {
 	private static final Pattern	STOP_SERVER_PATTERN = Pattern.compile("\\s*stop\\s*");
 	private static final Pattern	STATE_PATTERN = Pattern.compile("\\s*state\\s*");
 	private static final Pattern	HELP_PATTERN = Pattern.compile("\\s*help\\s*");
+	private static final Pattern	EXIT_PATTERN = Pattern.compile("\\s*exit\\s*");
 	
-	private final NanoServiceWrapper	owner;
+	private final NanoService		owner;
+	private final CountDownLatch	latch;
 	
-	public ConsoleParser(final NanoServiceWrapper owner) {
+	public ConsoleParser(final NanoService owner, final CountDownLatch latch) {
 		if (owner == null) {
 			throw new NullPointerException("Owner can't be null");
 		}
+		else if (latch == null) {
+			throw new NullPointerException("Latch can't be null");
+		}
 		else {
 			this.owner = owner;
+			this.latch = latch;
 		}
 	}
 
 	public void processConsoleInput(final String cmd) throws CommandLineParametersException {
-		processConsoleInput(cmd, Thread.currentThread().getContextClassLoader());
+		processConsoleInput(cmd, getClassLoader(), false);
+	}
+
+	public void processConsoleInput(final String cmd, final boolean echo) throws CommandLineParametersException {
+		processConsoleInput(cmd, getClassLoader(), echo);
 	}
 	
-	public synchronized void processConsoleInput(final String cmd, final ClassLoader loader) throws IllegalArgumentException, NullPointerException, CommandLineParametersException {
+	public void processConsoleInput(final String cmd, final ClassLoader loader) throws IllegalArgumentException, NullPointerException, CommandLineParametersException {
+		processConsoleInput(cmd, loader, false);
+	}	
+	
+	public synchronized void processConsoleInput(final String cmd, final ClassLoader loader, final boolean echo) throws IllegalArgumentException, NullPointerException, CommandLineParametersException {
 		if (Utils.checkEmptyOrNullString(cmd)) {
 			throw new IllegalArgumentException("Input string can't be null or empty");
 		}
 		else if (loader == null) {
-			throw new NullPointerException("Class laoder can't be null");
+			throw new NullPointerException("Class loader can't be null");
 		}
 		else {
 			final List<String>	parms = new ArrayList<>();
 			
 			try {
+				if (echo) {
+					printErr("> "+cmd);
+				}
+				
 				if (isPattern(cmd, DEPLOY_PATTERN, parms)) {
 					try {
-						owner.deploy(parms.get(1), loader.loadClass(parms.get(0)));
-						System.out.println("Deploy completed");
-					} catch (ContentException | ClassNotFoundException e) {
-						throw new CommandLineParametersException(e.getLocalizedMessage());
+						final Class<?>			clazz = loader.loadClass(parms.get(0));
+						final Constructor<?>	c = clazz.getConstructor();
+						final Object			inst = c.newInstance();
+						
+						owner.deploy(parms.get(2), inst);
+						print("Deploy completed");
+					} catch (ContentException exc) {
+						throw new CommandLineParametersException(exc.getLocalizedMessage());
+					} catch (ClassNotFoundException exc) {
+						throw new CommandLineParametersException("Class to deploy ["+parms.get(0)+"] not found anywhere");
+					} catch (NoSuchMethodException | SecurityException exc) {
+						throw new CommandLineParametersException("Class to deploy ["+parms.get(0)+"] doesn't have public default constructor");
+					} catch (InstantiationException | IllegalAccessException | InvocationTargetException exc) {
+						throw new CommandLineParametersException("Error creating instance for class ["+parms.get(0)+"]", exc);
 					}
 				}
 				else if (isPattern(cmd, UNDEPLOY_PATTERN, parms)) {
 					owner.undeploy(parms.get(0));
-					System.out.println("Undeploy completed");
+					print("Undeploy completed");
 				}
 				else if (isPattern(cmd, LIST_DEPLOYMENTS_PATTERN, parms)) {
 					final int[] 	count = new int[] {0};
-					System.out.println("Deployed items:");
+					
+					print("Deployed items:");
 					owner.forEachDeployed((s,o)->{
 						try {
-							System.out.println("\t"+s+" ("+((o instanceof FileSystemInterface) ? "file system " + ((FileSystemInterface)o).getAbsoluteURI().toString() : "class "+o.getClass().getCanonicalName()) + ")");
+							print("\t"+s+" ("+((o instanceof FileSystemInterface) ? "file system " + ((FileSystemInterface)o).getAbsoluteURI().toString() : "class "+o.getClass().getCanonicalName()) + ")");
 							count[0]++;
 						} catch (IOException e) {
-							System.out.println("\t"+s+" (<I/O error on get>)");				
+							print("\t"+s+" (<I/O error on get>)");				
 						}
 					});
-					System.out.println("Totally deployed ["+count[0]+"] items");
+					print("Totally deployed ["+count[0]+"] items");
 				}
 				else if (isPattern(cmd, RESTART_SERVER_PATTERN, parms)) {
 					if (!owner.isStarted()) {
@@ -82,7 +114,7 @@ public class ConsoleParser {
 					else {
 						owner.stop();
 						owner.start();
-						System.out.println("Server restarted");
+						print("Server restarted");
 					}
 				}
 				else if (isPattern(cmd, START_SERVER_PATTERN, parms)) {
@@ -91,7 +123,7 @@ public class ConsoleParser {
 					}
 					else {
 						owner.start();
-						System.out.println("Server started");				
+						print("Server started");				
 					}
 				}
 				else if (isPattern(cmd, SUSPEND_SERVER_PATTERN, parms)) {
@@ -103,7 +135,7 @@ public class ConsoleParser {
 					}
 					else {
 						owner.suspend();
-						System.out.println("Server suspended");				
+						print("Server suspended");				
 					}
 				}
 				else if (isPattern(cmd, RESUME_SERVER_PATTERN, parms)) {
@@ -115,7 +147,7 @@ public class ConsoleParser {
 					}
 					else {
 						owner.resume();
-						System.out.println("Server resumed");				
+						print("Server resumed");				
 					}
 				}
 				else if (isPattern(cmd, STOP_SERVER_PATTERN, parms)) {
@@ -124,41 +156,56 @@ public class ConsoleParser {
 					}
 					else {
 						owner.stop();
-						System.out.println("Server stopped");
+						print("Server stopped");
 					}
 				}
 				else if (isPattern(cmd, STATE_PATTERN, parms)) {
 					if (owner.isStarted()) {
-						System.out.println("Server is started now");
+						print("Server is started now");
 						if (owner.isSuspended()) {
-							System.out.println("Server is in suspended state");
+							print("Server is in suspended state");
 						}
 					}
 					else {
-						System.out.println("Server is not started now");
+						print("Server is not started now");
 					}
 				}
+				else if (isPattern(cmd, EXIT_PATTERN, parms)) {
+					print("Completed");
+					latch.countDown();
+				}
 				else if (isPattern(cmd, HELP_PATTERN, parms)) {
-					System.out.println("Command list:");
-					System.out.println("\tdeploy <class> to <path>");
-					System.out.println("\tundelpoy from <path>");
-					System.out.println("\tlist");
-					System.out.println("\tstart");
-					System.out.println("\tsuspend");
-					System.out.println("\tresume");
-					System.out.println("\tstop");
-					System.out.println("\trestart");
-					System.out.println("\tstate");
+					print("Command list:");
+					print("\tdeploy <class> to <path>");
+					print("\tundelpoy from <path>");
+					print("\tlist");
+					print("\tstart");
+					print("\tsuspend");
+					print("\tresume");
+					print("\tstop");
+					print("\trestart");
+					print("\tstate");
+					print("\texit");
 				}
 				else {
+					printErr("Command not recognized");
 					throw new CommandLineParametersException("Command not recognized");
 				}
-			} catch (IOException e) {
+			} catch (IOException | RuntimeException e) {
+				printErr(e.getLocalizedMessage());
 				throw new CommandLineParametersException(e.getLocalizedMessage());
 			}
 		}
 	}
+	
+	protected void print(final String content) {
+		System.out.println(content);
+	}
 
+	protected void printErr(final String content) {
+		System.err.println(content);
+	}
+	
 	private boolean isPattern(final String cmd, final Pattern pattern, final List<String> groups) {
 		final Matcher	m = pattern.matcher(cmd);
 		
@@ -172,5 +219,14 @@ public class ConsoleParser {
 			}
 			return true;
 		}
+	}
+	
+	private ClassLoader getClassLoader() {
+		ClassLoader	result = Thread.currentThread().getContextClassLoader();
+		
+		if (result == null) {
+			result = this.getClass().getClassLoader();
+		}
+		return result;
 	}
 }

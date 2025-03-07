@@ -1,5 +1,6 @@
 package chav1961.nanohttp.server;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -13,6 +14,7 @@ import javax.net.ssl.TrustManagerFactory;
 
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.Utils;
+import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
 public class NanoServiceBuilder {
 	private int		port = 8080;
@@ -134,8 +136,12 @@ public class NanoServiceBuilder {
 		if (root == null) {
 			throw new NullPointerException("Root can't be null");
 		}
-		else {
+		else if (root.isAbsolute()) {
 			this.root = root;
+			return this;
+		}
+		else {
+			this.root = URI.create(FileSystemInterface.FILESYSTEM_URI_SCHEME+":"+ new File(root.getPath()).toURI());
 			return this;
 		}
 	}

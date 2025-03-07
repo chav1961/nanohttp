@@ -2,6 +2,7 @@ package chav1961.nanohttp.server.interfaces;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.function.BiConsumer;
 
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
@@ -24,8 +25,7 @@ import chav1961.purelib.fsys.interfaces.FileSystemInterface;
  * </ul> 
  * @see NanoServiceFactory
  * @author Alexander Chernomyrdin aka chav1961
- * @since 0.0.3
- * @last.update 0.0.5
+ * @since 0.0.1
  */
 public interface NanoService extends ExecutionControl {
 	@Override
@@ -70,7 +70,12 @@ public interface NanoService extends ExecutionControl {
 	/**
 	 * <p>Get listening address of the server</p>
 	 * @return listening address. Can be null if server is not started yet
-	 * @since 0.0.5
 	 */
 	InetSocketAddress getServerAddress();
+
+	/**
+	 * <p>Process each deployed plug-in.</p>
+	 * @param callback callback to process each plug-in. Can't be null.
+	 */
+	void forEachDeployed(final BiConsumer<String, Object> callback);
 }

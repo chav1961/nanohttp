@@ -3,49 +3,70 @@ package chav1961.nanohttp.server.jmx;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 
+import chav1961.nanohttp.internal.ConsoleParser;
 import chav1961.nanohttp.server.NanoServiceWrapper;
+import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 
 public class JmxManager implements JmxManagerMBean {
 	private final NanoServiceWrapper	wrapper;
-	private final CountDownLatch		latch;
+	private final ConsoleParser			parser;
 	
-	public JmxManager(final NanoServiceWrapper wrapper, final CountDownLatch latch) {
+	public JmxManager(final NanoServiceWrapper wrapper, final ConsoleParser parser) {
 		if (wrapper == null) {
 			throw new NullPointerException("Wrapper can't be null");
 		}
-		else if (latch == null) {
-			throw new NullPointerException("Latch can't be null");
+		else if (parser == null) {
+			throw new NullPointerException("Console parser can't be null");
 		}
 		else {
 			this.wrapper = wrapper;
-			this.latch = latch;
+			this.parser = parser;
 		}
 	}
 	
 	@Override
 	public void start() throws IOException {
-		getWrapper().start();
+		try {
+			parser.processConsoleInput("start", true);
+		} catch (CommandLineParametersException e) {
+			throw new IOException(e.getLocalizedMessage());
+		}
 	}
 
 	@Override
 	public void suspend() throws IOException {
-		getWrapper().suspend();
+		try {
+			parser.processConsoleInput("suspend", true);
+		} catch (CommandLineParametersException e) {
+			throw new IOException(e.getLocalizedMessage());
+		}
 	}
 
 	@Override
 	public void resume() throws IOException {
-		getWrapper().resume();
+		try {
+			parser.processConsoleInput("resume", true);
+		} catch (CommandLineParametersException e) {
+			throw new IOException(e.getLocalizedMessage());
+		}
 	}
 
 	@Override
 	public void stop() throws IOException {
-		getWrapper().stop();
+		try {
+			parser.processConsoleInput("stop", true);
+		} catch (CommandLineParametersException e) {
+			throw new IOException(e.getLocalizedMessage());
+		}
 	}
 
 	@Override
 	public void terminateAndExit() throws IOException {
-		getWrapper().close();
-		latch.countDown();
+		try {
+			parser.processConsoleInput("exit", true);
+		} catch (CommandLineParametersException e) {
+			throw new IOException(e.getLocalizedMessage());
+		}
 	}
 
 	@Override

@@ -264,6 +264,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		return server.getAddress();
 	}
 
+	@Override
 	public void forEachDeployed(final BiConsumer<String, Object> callback) {
 		if (callback == null) {
 			throw new NullPointerException("Callback can't be null"); 

@@ -46,6 +46,7 @@ import chav1961.nanohttp.server.jmx.JmxManager;
 import chav1961.nanohttp.server.jmx.JmxManagerMBean;
 import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
+import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 
 public class Application {
@@ -69,19 +70,13 @@ public class Application {
 
 			if (!parsed.isTyped(ARG_MODE)) {
 				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build();
-				final ConsoleParser			cp = new ConsoleParser(wrapper);
 				final CountDownLatch		latch = new CountDownLatch(1);
-				final JmxManager			mgr = new JmxManager(wrapper, latch);
+				final ConsoleParser			cp = new ConsoleParser(wrapper, latch);
+				final JmxManager			mgr = new JmxManager(wrapper, cp);
 				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
 				final Thread				deployThread = new Thread(()->processInput(wrapper, cp, System.in));
 
-				Runtime.getRuntime().addShutdownHook(new Thread(()->{
-					try{wrapper.stop();
-						wrapper.close();
-					} catch (IOException e) {
-						e.printStackTrace();
-					}
-				}));
+				Runtime.getRuntime().addShutdownHook(new Thread(()->{terminate(wrapper);}));
 				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
 					server.registerMBean(mgr, jmxName);
 				}
@@ -99,12 +94,13 @@ public class Application {
 				
 				try {
 					latch.await();
-					if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
-						server.unregisterMBean(jmxName);
-					}
 				} catch (InterruptedException e) {
 					throw new IOException(e);
 				} finally {
+					if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
+						server.unregisterMBean(jmxName);
+					}
+					terminate(wrapper);
 					System.in.close();
 				}
 			}
@@ -160,6 +156,16 @@ public class Application {
 		try {
 			cp.processConsoleInput("undeploy "+p.getPath(), loader);
 		} catch (CommandLineParametersException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private static void terminate(final NanoServiceWrapper wrapper) {
+		try{if (wrapper.isStarted()) {
+				wrapper.stop();
+			}
+			wrapper.close();
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	}
@@ -229,11 +235,18 @@ public class Application {
 			final BufferedReader	brdr = new BufferedReader(rdr)) {
 			String 	line;
 			
-			while ((line = brdr.readLine())  != null) {
-				try {
-					cp.processConsoleInput(line);
-				} catch (CommandLineParametersException e) {
-					System.err.println(e.getLocalizedMessage());
+			while ((line = brdr.readLine()) != null) {
+				final String	trimmed = line.trim();
+				
+				if (!Utils.checkEmptyOrNullString(trimmed)) {
+					try {
+						cp.processConsoleInput(line);
+					} catch (CommandLineParametersException e) {
+						System.err.println(e.getLocalizedMessage());
+					}
+				}
+				else {
+					System.err.println("Empty input, type command you wish or 'help'");
 				}
 			}
 		} catch (IOException e) {
