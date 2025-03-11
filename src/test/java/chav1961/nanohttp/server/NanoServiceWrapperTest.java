@@ -17,6 +17,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import chav1961.nanohttp.server.parser.RequestType;
+import chav1961.purelib.basic.PureLibSettings;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
@@ -28,7 +29,7 @@ public class NanoServiceWrapperTest {
 	public void lifeCycleTest() throws IOException {
 		final NanoServiceBuilder	bldr = NanoServiceBuilder.of(SubstitutableProperties.of(getClass().getResourceAsStream("/nanoservice.conf")));
 		
-		try(final NanoServiceWrapper wrapper = bldr.build()) {
+		try(final NanoServiceWrapper wrapper = bldr.build(PureLibSettings.NULL_LOGGER)) {
 			Assert.assertFalse(wrapper.isStarted());
 			Assert.assertFalse(wrapper.isSuspended());
 			wrapper.start();
@@ -77,7 +78,7 @@ public class NanoServiceWrapperTest {
 	public void callTest() throws IOException {
 		final NanoServiceBuilder	bldr = NanoServiceBuilder.of(SubstitutableProperties.of(getClass().getResourceAsStream("/nanoservice.conf")));
 		
-		try(final NanoServiceWrapper wrapper = bldr.build()) {
+		try(final NanoServiceWrapper wrapper = bldr.build(PureLibSettings.NULL_LOGGER)) {
 			wrapper.start();
 			try(final InputStream 		is = URI.create("http://localhost:6666/x.txt").toURL().openStream();
 				final Reader			rdr = new InputStreamReader(is);
@@ -92,7 +93,7 @@ public class NanoServiceWrapperTest {
 	public void staticDeploymentTest() throws IOException, SyntaxException, ContentException {
 		final NanoServiceBuilder	bldr = NanoServiceBuilder.of(SubstitutableProperties.of(getClass().getResourceAsStream("/nanoservice.conf")));
 		
-		try(final NanoServiceWrapper 	wrapper = bldr.build();
+		try(final NanoServiceWrapper 	wrapper = bldr.build(PureLibSettings.NULL_LOGGER);
 			final FileSystemInterface	child = new FileSystemOnFile(URI.create("file:./src/test/resources/child"))) {
 			
 			wrapper.start();
@@ -124,7 +125,7 @@ public class NanoServiceWrapperTest {
 	public void servletDeploymentTest() throws IOException, SyntaxException, ContentException {
 		final NanoServiceBuilder	bldr = NanoServiceBuilder.of(SubstitutableProperties.of(getClass().getResourceAsStream("/nanoservice.conf")));
 		
-		try(final NanoServiceWrapper 	wrapper = bldr.build()) {
+		try(final NanoServiceWrapper 	wrapper = bldr.build(PureLibSettings.NULL_LOGGER)) {
 			final TestClass		tc = new TestClass();
 			
 			wrapper.start();

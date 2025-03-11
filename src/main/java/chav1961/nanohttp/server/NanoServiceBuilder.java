@@ -12,8 +12,10 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
+import chav1961.purelib.basic.NullLoggerFacade;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.Utils;
+import chav1961.purelib.basic.interfaces.LoggerFacade;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
 public class NanoServiceBuilder {
@@ -265,8 +267,12 @@ public class NanoServiceBuilder {
 		this.turnOnTrace = traceOn;
 		return this;
 	}
-	
+
 	public NanoServiceWrapper build() throws IOException {
+		return build(new NullLoggerFacade());
+	}	
+	
+	public NanoServiceWrapper build(final LoggerFacade logger) throws IOException {
 		if (useSSL) {
 			if (useSSLKeystore) {
 				if (sslKeyStore == null) {
@@ -285,7 +291,7 @@ public class NanoServiceBuilder {
 				}
 			}
 		}
-		return new NanoServiceWrapper(this);
+		return new NanoServiceWrapper(this, logger);
 	}
 	
 	InetSocketAddress getSocketAddress() {

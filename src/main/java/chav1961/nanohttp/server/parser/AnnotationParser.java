@@ -33,6 +33,7 @@ import javax.ws.rs.QueryParam;
 
 import com.sun.net.httpserver.HttpExchange;
 
+import chav1961.nanohttp.internal.InternalUtils;
 import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoClassSerializer;
 import chav1961.purelib.basic.MimeType;
@@ -61,7 +62,7 @@ public class AnnotationParser<T> {
 		else {
 			this.annotated = inst;
 			this.annotatedClass = (Class<T>) inst.getClass();
-			this.rootPath = rootPrefix + (this.annotatedClass.isAnnotationPresent(Path.class) ? this.annotatedClass.getAnnotation(Path.class).value() : "");
+			this.rootPath = InternalUtils.buildRootPrefix(rootPrefix, (annotatedClass.isAnnotationPresent(Path.class) ? annotatedClass.getAnnotation(Path.class).value() : ""));
 			
 			final List<CallDescriptor>[]	temp = new List[RequestType.values().length];
 			
@@ -110,6 +111,10 @@ public class AnnotationParser<T> {
 				}
 			}
 		}
+	}
+	
+	public T getInstance() {
+		return annotated;
 	}
 	
 	public String getRootPath() {
@@ -480,7 +485,7 @@ public class AnnotationParser<T> {
 	}
 	
 	private static class CallDescriptor {
-//		final RequestType 		type;
+		final RequestType 		type;
 		final String[] 			pathTemplate;
 		final MethodHandle 		mh;
 		final Extractor[] 		parms;
@@ -488,8 +493,8 @@ public class AnnotationParser<T> {
 		final NanoClassSerializer	responseSerializer;
 		
 		private CallDescriptor(final RequestType type, final String pathTemplate, final Extractor[] parms, final MethodHandle mh, final boolean noResponse, final NanoClassSerializer responseSerializer) {
-//			this.type = type;
-			this.pathTemplate = pathTemplate.split("/");
+			this.type = type;
+			this.pathTemplate = InternalUtils.splitRequestPath(pathTemplate);
 			this.mh = mh;
 			this.parms = parms;
 			this.noResponse = noResponse;
@@ -560,7 +565,7 @@ public class AnnotationParser<T> {
 		}
 		
 		private boolean matches(final String path) {
-			final String[] piece = path.split("/");
+			final String[] piece = InternalUtils.splitRequestPath(path);
 			final String[] template = pathTemplate;
 			
 			if (piece.length != template.length) {
@@ -603,6 +608,11 @@ public class AnnotationParser<T> {
 
 		private boolean isString(final CharSequence seq) {
 			return !seq.isEmpty();
+		}
+
+		@Override
+		public String toString() {
+			return "CallDescriptor [requestType=" + type + ", pathTemplate=" + Arrays.toString(pathTemplate) + ", parms=" + Arrays.toString(parms) + ", noResponse=" + noResponse + ", responseSerializer=" + responseSerializer.getClass().getName() + "]";
 		}
 	}
 	

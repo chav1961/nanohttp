@@ -10,6 +10,8 @@ import java.io.Reader;
 import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,7 +21,10 @@ import java.util.Map.Entry;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -27,6 +32,7 @@ import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 
+import chav1961.nanohttp.internal.InternalUtils;
 import chav1961.nanohttp.server.exceptions.RestServiceException;
 import chav1961.nanohttp.server.interfaces.NanoContentEncoder;
 import chav1961.nanohttp.server.interfaces.NanoContentSerializer;
@@ -40,10 +46,13 @@ import chav1961.purelib.basic.exceptions.MimeParseException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
 import chav1961.purelib.basic.interfaces.LoggerFacade;
 import chav1961.purelib.basic.interfaces.LoggerFacade.Severity;
+import chav1961.purelib.basic.interfaces.LoggerFacadeOwner;
+import chav1961.purelib.concurrent.LightWeightRWLockerWrapper;
+import chav1961.purelib.concurrent.LightWeightRWLockerWrapper.Locker;
 import chav1961.purelib.fsys.interfaces.DataWrapperInterface;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
-public class NanoServiceWrapper implements NanoService, Closeable {
+public class NanoServiceWrapper implements NanoService, Closeable, LoggerFacadeOwner {
 	private static final Comparator<DeploymentKeeper<?>>	DEPLOY_SORT = (o1,o2)->{
 																int	delta = o1.path.length - o2.path.length;
 																
@@ -76,17 +85,20 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	private final boolean				useHttps;
 	private final boolean				turnOnTrace;
 	private final FileSystemInterface	fsi;
-	private final List<DeploymentKeeper<?>>			deployed = new CopyOnWriteArrayList<>();
+	private final LightWeightRWLockerWrapper		lock = new LightWeightRWLockerWrapper(); 
+	private final List<DeploymentKeeper<?>>			deployed = new ArrayList<>();
 	private final Map<String, NanoContentEncoder>	encoders = new HashMap<>();
 	private final boolean				lockExternalQueries;
+	private final LoggerFacade			logger; 
 	private volatile HttpServer			server = null;
-	private final LoggerFacade			logger = new SystemErrLoggerFacade(); 
+	private volatile ExecutorService	executors = null;
 	private volatile Object[]			passedParameters = new Object[0];
 	private volatile boolean			isStarted = false;	
 	private volatile boolean			isSuspended = false;	
 	
-	NanoServiceWrapper(final NanoServiceBuilder bldr) throws IOException {
+	NanoServiceWrapper(final NanoServiceBuilder bldr, final LoggerFacade logger) throws IOException {
 		this.bldr = bldr;
+		this.logger = logger;
 		this.useHttps = bldr.needUseSSL();
 		this.fsi = FileSystemInterface.Factory.newInstance(bldr.getRoot());
 		this.lockExternalQueries = !bldr.isLocalhostOnly();
@@ -98,6 +110,11 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			}
 		}
 	}
+	
+	@Override
+	public LoggerFacade getLogger() {
+		return logger;
+	}
 
 	@Override
 	public synchronized void close() throws IOException {
@@ -106,7 +123,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}
 		fsi.close();
 		if (isTraceTurnedOn()) {
-			logger.message(Severity.debug, "Server closed");
+			getLogger().message(Severity.debug, "Server closed");
 		}
 	}
 	
@@ -116,12 +133,12 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new IllegalStateException("Server is already started");
 		}
 		else {
-			this.server = prepareServer(bldr);
-			
+			this.executors = prepareExecutors(bldr);
+			this.server = prepareServer(bldr, executors);
 			isStarted = true;
 			this.server.start();
 			if (isTraceTurnedOn()) {
-				logger.message(Severity.debug, "Server started, port="+bldr.getSocketAddress().getPort());
+				getLogger().message(Severity.debug, "Server started, port="+bldr.getSocketAddress().getPort());
 			}
 		}
 	}
@@ -164,8 +181,17 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new IllegalStateException("Server is not started or was stopped earlier");
 		}
 		else {
-			this.server.stop(0);
+			this.server.stop(5);
+			this.executors.shutdownNow();
+			try {
+				if (isTraceTurnedOn()) {
+					logger.message(Severity.debug, "Stopping executors");
+				}
+				this.executors.awaitTermination(10, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+			}
 			this.server = null;
+			this.executors = null;
 			isSuspended = false;
 			isStarted = false;
 			if (isTraceTurnedOn()) {
@@ -197,8 +223,8 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}
 		else if (instance2deploy instanceof FileSystemInterface) {
 			getServiceRoot().open(path).mount((FileSystemInterface)instance2deploy);
-			synchronized (deployed) {
-				deployed.add(new DeploymentKeeper<FileSystemInterface>(path.split("/"), (FileSystemInterface)instance2deploy));
+			try (final Locker l = lock.lock(false)) {
+				deployed.add(new DeploymentKeeper<FileSystemInterface>(InternalUtils.splitRequestPath(path), (FileSystemInterface)instance2deploy));
 				deployed.sort(DEPLOY_SORT);
 			}
 			if (isTraceTurnedOn()) {
@@ -206,11 +232,11 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			}
 		}
 		else {
-			synchronized (deployed) {
+			try (final Locker l = lock.lock(false)) {
 				final AnnotationParser<?>	ap = new AnnotationParser<>(instance2deploy, path);
 				final String				totalPath = ap.getRootPath();				
 				
-				deployed.add(new DeploymentKeeper<AnnotationParser<?>>(totalPath.split("/"), ap));
+				deployed.add(new DeploymentKeeper<AnnotationParser<?>>(InternalUtils.splitRequestPath(totalPath), ap));
 				deployed.sort(DEPLOY_SORT);
 			}
 			if (isTraceTurnedOn()) {
@@ -228,9 +254,9 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new IllegalStateException("Path to undeploy ["+path+"] had not been deployed yet. Call deploy(...) before");
 		}
 		else {
-			final String[]	content = path.split("/");
+			final String[]	content = InternalUtils.splitRequestPath(path);
 			
-			synchronized (deployed) {
+			try (final Locker l = lock.lock(false)) {
 				for(int index  = deployed.size()-1; index >= 0; index--) {
 					if (deployed.get(index).equalsWith(content)) {
 						final DeploymentKeeper<?> 	keeper = deployed.remove(index);
@@ -270,13 +296,13 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			throw new NullPointerException("Callback can't be null"); 
 		}
 		else {
-			final DeploymentKeeper<?>[]	content;
+			final DeploymentKeeper<AnnotationParser<?>>[]	content;
 			
-			synchronized (deployed) {
-				content = deployed.toArray(new DeploymentKeeper<?>[deployed.size()]);
+			try (final Locker l = lock.lock()) {
+				content = deployed.toArray(new DeploymentKeeper[deployed.size()]);
 			}
-			for(DeploymentKeeper<?> item : content) {
-				callback.accept(String.join("/", item.path), item.content);
+			for(DeploymentKeeper<AnnotationParser<?>> item : content) {
+				callback.accept(String.join("/", item.path), item.content.getInstance());
 			}
 		}
 	}
@@ -293,22 +319,22 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 			this.passedParameters = parameters;
 		}
 	}
-	
+
+	public boolean isTraceTurnedOn() {
+		return turnOnTrace;
+	}
+
 	protected boolean isHttpsUsed() {
 		return useHttps;
 	}
 	
-	protected boolean isTraceTurnedOn() {
-		return turnOnTrace;
-	}
-
 	private void processRequest(final HttpExchange e) throws IOException {
 		if (isSuspended || lockExternalQueries && !e.getRemoteAddress().getHostName().equals(e.getLocalAddress().getHostName())) {
 			sendResponse(e, 503);
 		}
 		else {
 			final String	path = e.getRequestURI().getPath();
-			final String[]	content = path.split("/");
+			final String[]	content = InternalUtils.splitRequestPath(path);
 			final DeploymentKeeper<?>	deployed = getDeployed(content);
 			
 			if (deployed == null || (deployed.content instanceof FileSystemInterface)) {
@@ -331,7 +357,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				}
 			}
  			else if (deployed.content instanceof AnnotationParser<?>) {
-				try {
+ 				try {					
 	 				((AnnotationParser<?>)deployed.content).processRequest(e, passedParameters);
 				} catch (RestServiceException exc) {
 					sendResponse(e, exc.getResponseCode());
@@ -347,11 +373,13 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	}
 
 	private boolean isDeployed(final String path) {
-		final String[]	content = path.split("/");
+		final String[]	content = InternalUtils.splitRequestPath(path);
 		
-		for(DeploymentKeeper<?> item : deployed) {
-			if (item.equalsWith(content)) {
-				return true;
+		try (final Locker l = lock.lock()) {
+			for(DeploymentKeeper<?> item : deployed) {
+				if (item.equalsWith(content)) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -360,11 +388,13 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 	private DeploymentKeeper<?> getDeployed(final String[] content) {
 		final DeploymentKeeper<?>[]	result = new DeploymentKeeper[1];
 
-		deployed.forEach((val)->{
-			if (val.startsWith(content)) {
-				result[0] = val;
-			}
-		});
+		try (final Locker l = lock.lock()) {
+			deployed.forEach((val)->{
+				if (val.startsWith(content)) {
+					result[0] = val;
+				}
+			});
+		}
 		return result[0];
 	}
 	
@@ -480,7 +510,24 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		}		
 	}
 
-	private HttpServer prepareServer(final NanoServiceBuilder bldr) throws IOException {
+	private ExecutorService prepareExecutors(final NanoServiceBuilder bldr) throws IOException {
+		if (bldr.getExecutorPoolSize() == 0) {
+			return Executors.newCachedThreadPool((r)->createThread(r));
+		}
+		else {
+			return Executors.newFixedThreadPool(bldr.getExecutorPoolSize(), (r)->createThread(r));
+		}
+	}	
+	
+	private static Thread createThread(final Runnable r) {
+		final Thread	t = new Thread(r);
+		
+		t.setName("HTTP request processor");
+		t.setDaemon(true);
+		return t;
+	}
+
+	private HttpServer prepareServer(final NanoServiceBuilder bldr, final ExecutorService service) throws IOException {
 		final HttpServer	result;
 		
 		if (bldr.needUseSSL()) {
@@ -492,12 +539,7 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 		else {
 			result = HttpServer.create(bldr.getSocketAddress(), 0);
 		}
-		if (bldr.getExecutorPoolSize() == 0) {
-			result.setExecutor(Executors.newCachedThreadPool());
-		}
-		else {
-			result.setExecutor(Executors.newFixedThreadPool(bldr.getExecutorPoolSize()));
-		}
+		result.setExecutor(service);
 		result.createContext("/", (e)->processRequest(e));
 		return result;
 	}
@@ -548,6 +590,11 @@ public class NanoServiceWrapper implements NanoService, Closeable {
 				}
 				return true;
 			}
+		}
+
+		@Override
+		public String toString() {
+			return "DeploymentKeeper [path=" + String.join("/", path) + ", class=" + ((content instanceof AnnotationParser) ? ((AnnotationParser)content).getInstance().getClass().getName() : content.getClass().getName()) + "]";
 		}
 	}	
 }

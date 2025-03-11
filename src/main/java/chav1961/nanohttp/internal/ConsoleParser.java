@@ -73,12 +73,18 @@ public class ConsoleParser {
 				
 				if (isPattern(cmd, DEPLOY_PATTERN, parms)) {
 					try {
+						final String			path = parms.get(2); 
 						final Class<?>			clazz = loader.loadClass(parms.get(0));
 						final Constructor<?>	c = clazz.getConstructor();
 						final Object			inst = c.newInstance();
 						
-						owner.deploy(parms.get(2), inst);
-						print("Deploy completed");
+						if (!path.startsWith("/")) {
+							throw new CommandLineParametersException("Path to deploy must be started with '/'");
+						}
+						else {
+							owner.deploy(path, inst);
+							print("Deploy completed");
+						}
 					} catch (ContentException exc) {
 						throw new CommandLineParametersException(exc.getLocalizedMessage());
 					} catch (ClassNotFoundException exc) {

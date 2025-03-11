@@ -46,8 +46,11 @@ import chav1961.nanohttp.server.jmx.JmxManager;
 import chav1961.nanohttp.server.jmx.JmxManagerMBean;
 import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
+import chav1961.purelib.basic.SystemErrLoggerFacade;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
+import chav1961.purelib.basic.interfaces.LoggerFacade;
+import chav1961.purelib.basic.interfaces.LoggerFacade.Severity;
 
 public class Application {
 	public static final String		ARG_MODE = "mode";
@@ -69,7 +72,8 @@ public class Application {
 			final ObjectName 				jmxName = new ObjectName(JMX_NAME);
 
 			if (!parsed.isTyped(ARG_MODE)) {
-				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build();
+				final LoggerFacade			logger = new SystemErrLoggerFacade();
+				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build(logger);
 				final CountDownLatch		latch = new CountDownLatch(1);
 				final ConsoleParser			cp = new ConsoleParser(wrapper, latch);
 				final JmxManager			mgr = new JmxManager(wrapper, cp);
@@ -79,6 +83,9 @@ public class Application {
 				Runtime.getRuntime().addShutdownHook(new Thread(()->{terminate(wrapper);}));
 				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
 					server.registerMBean(mgr, jmxName);
+					if (wrapper.isTraceTurnedOn()) {
+						wrapper.getLogger().message(Severity.debug, "JMX server started, JMX name is ["+JMX_NAME+"]");
+					}
 				}
 				wrapper.start();
 				
@@ -90,6 +97,7 @@ public class Application {
 
 				if (parsed.isTyped(ARG_APP_DIR)) {
 					startAppDirListener(cp, parsed.getValue(ARG_APP_DIR, File.class));
+					wrapper.getLogger().message(Severity.debug, "Application directory listener started");
 				}
 				
 				try {
@@ -99,6 +107,9 @@ public class Application {
 				} finally {
 					if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
 						server.unregisterMBean(jmxName);
+						if (wrapper.isTraceTurnedOn()) {
+							wrapper.getLogger().message(Severity.debug, "JMX server closed");
+						}
 					}
 					terminate(wrapper);
 					System.in.close();
@@ -146,7 +157,7 @@ public class Application {
 
 	private static void deploy(final ConsoleParser cp, final NanoSPIPlugin p, final ClassLoader loader) {
 		try {
-			cp.processConsoleInput("deploy "+p.getPlugin().getClass().getName()+" "+p.getPath(), loader);
+			cp.processConsoleInput("deploy "+p.getPlugin().getClass().getName()+" to "+p.getPath(), loader);
 		} catch (CommandLineParametersException e) {
 			e.printStackTrace();
 		}
@@ -154,7 +165,7 @@ public class Application {
 
 	private static void undeploy(final ConsoleParser cp, final NanoSPIPlugin p, final ClassLoader loader) {
 		try {
-			cp.processConsoleInput("undeploy "+p.getPath(), loader);
+			cp.processConsoleInput("undeploy from "+p.getPath(), loader);
 		} catch (CommandLineParametersException e) {
 			e.printStackTrace();
 		}
@@ -279,9 +290,9 @@ public class Application {
 		private static final ArgParser.AbstractArg[]	KEYS = {
 			new EnumArg<ModeList>(ARG_MODE, ModeList.class, false, true, "Service control mode. Can be used after service startup only. To startup service, do not type this argument"),
 			new ConfigArg(ARG_CONFIG_FILE, true, false, "Config file location. Can be absolute/relative file path or any URI"),
-			new FileArg(ARG_APP_DIR, FileType.DIRECTORY_ONLY, true, false, "Application directory"),
+			new FileArg(ARG_APP_DIR, FileType.DIRECTORY_ONLY, false, false, "Application directory to keep plugins"),
+			new BooleanArg(ARG_JMX_ENABLE, false, "Turn on JMX to control the service", false),
 			new BooleanArg(ARG_DEBUG, false, "Turn on debug trace", false),
-			new BooleanArg(ARG_JMX_ENABLE, false, "Turn on JMX to control the service", false)
 		};
 		
 		private ApplicationArgParser() {
