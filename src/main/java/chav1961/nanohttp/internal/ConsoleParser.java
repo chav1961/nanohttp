@@ -13,9 +13,11 @@ import chav1961.nanohttp.server.interfaces.NanoService;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 import chav1961.purelib.basic.exceptions.ContentException;
+import chav1961.purelib.basic.interfaces.LoggerFacade;
+import chav1961.purelib.basic.interfaces.LoggerFacadeOwner;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
-public class ConsoleParser {
+public class ConsoleParser implements LoggerFacadeOwner {
 	private static final Pattern	DEPLOY_PATTERN = Pattern.compile("\\s*deploy\\s*(([a-zA-Z0-9\\._])+)\\s*to\\s*(([a-zA-Z0-9\\./_])+)");
 	private static final Pattern	UNDEPLOY_PATTERN = Pattern.compile("\\s*undeploy\\s*from\\s*(([a-zA-Z0-9\\./_])+)");
 	private static final Pattern	LIST_DEPLOYMENTS_PATTERN = Pattern.compile("\\s*list\\s*");
@@ -29,21 +31,37 @@ public class ConsoleParser {
 	private static final Pattern	EXIT_PATTERN = Pattern.compile("\\s*exit\\s*");
 	
 	private final NanoService		owner;
+	private final LoggerFacade		logger;
+	private final boolean			debugTraceRequired;
 	private final CountDownLatch	latch;
 	
-	public ConsoleParser(final NanoService owner, final CountDownLatch latch) {
+	public ConsoleParser(final NanoService owner, final LoggerFacade logger, final boolean debugTraceRequired, final CountDownLatch latch) {
 		if (owner == null) {
 			throw new NullPointerException("Owner can't be null");
+		}
+		else if (logger == null) {
+			throw new NullPointerException("Logger can't be null");
 		}
 		else if (latch == null) {
 			throw new NullPointerException("Latch can't be null");
 		}
 		else {
 			this.owner = owner;
+			this.logger = logger;
+			this.debugTraceRequired = debugTraceRequired;
 			this.latch = latch;
 		}
 	}
 
+	@Override
+	public LoggerFacade getLogger() {
+		return logger;
+	}
+	
+	public boolean isDebugTraceRequired() {
+		return debugTraceRequired;
+	}
+	
 	public void processConsoleInput(final String cmd) throws CommandLineParametersException {
 		processConsoleInput(cmd, getClassLoader(), false);
 	}
@@ -96,7 +114,14 @@ public class ConsoleParser {
 					}
 				}
 				else if (isPattern(cmd, UNDEPLOY_PATTERN, parms)) {
-					owner.undeploy(parms.get(0));
+					final Object 	item = owner.undeploy(parms.get(0));
+					
+					if (item instanceof AutoCloseable) {
+						try {
+							((AutoCloseable)item).close();
+						} catch (Exception e) {
+						}
+					}
 					print("Undeploy completed");
 				}
 				else if (isPattern(cmd, LIST_DEPLOYMENTS_PATTERN, parms)) {
@@ -177,7 +202,7 @@ public class ConsoleParser {
 					}
 				}
 				else if (isPattern(cmd, EXIT_PATTERN, parms)) {
-					print("Completed");
+					print("Termination started, please wait...");
 					latch.countDown();
 				}
 				else if (isPattern(cmd, HELP_PATTERN, parms)) {

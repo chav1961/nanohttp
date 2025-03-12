@@ -13,7 +13,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.security.SecureRandom;
 import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
@@ -53,34 +55,40 @@ import chav1961.purelib.basic.interfaces.LoggerFacade;
 import chav1961.purelib.basic.interfaces.LoggerFacade.Severity;
 
 public class Application {
-	public static final String		ARG_MODE = "mode";
-	public static final String		ARG_APP_DIR = "appdir";
-	public static final String		ARG_JMX_ENABLE = "jmx";
-	public static final String		ARG_DEBUG = "d";
-	public static final String		ARG_CONFIG_FILE = "conf";
-	public static final String		JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
+	public static final String			ARG_MODE = "mode";
+	public static final String			ARG_APP_DIR = "appdir";
+	public static final String			ARG_JMX_ENABLE = "jmx";
+	public static final String			ARG_DEBUG = "d";
+	public static final String			ARG_CONFIG_FILE = "conf";
+	public static final String			JMX_NAME = "chav1961.nanohttp:type=basic,name=server";
 
-	private static final String		DEPLOYER_NAME = "App dir deployer";
-	private static final String		CONSOLE_DEPLOYER_NAME = "Console deploy thread";
+	private static final String			DEPLOYER_NAME = "App dir deployer";
+	private static final String			CONSOLE_DEPLOYER_NAME = "Console deploy thread";
+	private static final SecureRandom	RANDOM = new SecureRandom();
 	
 	public static void main(String[] args) {
 		final ApplicationArgParser		ap = new ApplicationArgParser();
+		final File						tempDir = new File(new File(System.getProperty("java.io.tmpdir")), "nanohttp"+RANDOM.nextLong()+".tmp");
 		
 		try{
 			final ArgParser 				parsed = ap.parse(args); 
 			final SubstitutableProperties	props = SubstitutableProperties.of(parsed.getValue(ARG_CONFIG_FILE, URI.class).toURL().openStream()); 
 			final ObjectName 				jmxName = new ObjectName(JMX_NAME);
 
+			tempDir.mkdirs();			
 			if (!parsed.isTyped(ARG_MODE)) {
 				final LoggerFacade			logger = new SystemErrLoggerFacade();
 				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build(logger);
 				final CountDownLatch		latch = new CountDownLatch(1);
-				final ConsoleParser			cp = new ConsoleParser(wrapper, latch);
+				final ConsoleParser			cp = new ConsoleParser(wrapper, logger, wrapper.isTraceTurnedOn(), latch);
 				final JmxManager			mgr = new JmxManager(wrapper, cp);
 				final MBeanServer 			server = ManagementFactory.getPlatformMBeanServer();
 				final Thread				deployThread = new Thread(()->processInput(wrapper, cp, System.in));
 
-				Runtime.getRuntime().addShutdownHook(new Thread(()->{terminate(wrapper);}));
+				Runtime.getRuntime().addShutdownHook(new Thread(()->{
+					print("Termination request started, please wait...");
+					terminate(wrapper);
+				}));
 				if (parsed.getValue(ARG_JMX_ENABLE, boolean.class)) {
 					server.registerMBean(mgr, jmxName);
 					if (wrapper.isTraceTurnedOn()) {
@@ -96,7 +104,7 @@ public class Application {
 				deployThread.start();
 
 				if (parsed.isTyped(ARG_APP_DIR)) {
-					startAppDirListener(cp, parsed.getValue(ARG_APP_DIR, File.class));
+					startAppDirListener(cp, wrapper.isTraceTurnedOn(), parsed.getValue(ARG_APP_DIR, File.class), tempDir);
 					wrapper.getLogger().message(Severity.debug, "Application directory listener started");
 				}
 				
@@ -143,15 +151,17 @@ public class Application {
 					default:
 						throw new UnsupportedOperationException("Service mode ["+parsed.getValue(ARG_MODE, ModeList.class)+"] is not supported yet");
 				}
-				System.err.println("Command completed");
+				print("Command completed");
 			}
 		} catch (CommandLineParametersException exc) {
-			System.err.println(exc.getLocalizedMessage());
-			System.err.println(ap.getUsage("nanohttp"));
+			print(exc.getLocalizedMessage());
+			print(ap.getUsage("nanohttp"));
 			System.exit(128);
 		} catch (IOException | MalformedObjectNameException | InstanceNotFoundException | InstanceAlreadyExistsException | MBeanRegistrationException | NotCompliantMBeanException | AttachNotSupportedException e) {
 			e.printStackTrace();
 			System.exit(129);
+		} finally {
+			Utils.deleteDir(tempDir);
 		}
 	}
 
@@ -159,7 +169,7 @@ public class Application {
 		try {
 			cp.processConsoleInput("deploy "+p.getPlugin().getClass().getName()+" to "+p.getPath(), loader);
 		} catch (CommandLineParametersException e) {
-			e.printStackTrace();
+			cp.getLogger().message(Severity.error, e.getLocalizedMessage());
 		}
 	}
 
@@ -167,7 +177,7 @@ public class Application {
 		try {
 			cp.processConsoleInput("undeploy from "+p.getPath(), loader);
 		} catch (CommandLineParametersException e) {
-			e.printStackTrace();
+			cp.getLogger().message(Severity.error, e.getLocalizedMessage());
 		}
 	}
 	
@@ -177,36 +187,56 @@ public class Application {
 			}
 			wrapper.close();
 		} catch (IOException e) {
-			e.printStackTrace();
+			wrapper.getLogger().message(Severity.error, e.getLocalizedMessage());
 		}
 	}
 	
-	private static void startAppDirListener(final ConsoleParser cp, final File dir) throws IOException {
+	private static void startAppDirListener(final ConsoleParser cp, final boolean traceRequired, final File dir, final File tempDir) throws IOException {
 		final WatchService 		watcher = FileSystems.getDefault().newWatchService();
 		final Thread			t = new Thread(()->{
-									try (final DeploymentRepo	repo = new DeploymentRepo(dir)) {
-										for(;;) {
-											for(WatchEvent<?> event: watcher.take().pollEvents()) {
+									
+									try (final DeploymentRepo	repo = new DeploymentRepo(dir, tempDir, cp.getLogger(), traceRequired)) {
+										final File[]	content = dir.listFiles();
+										WatchKey		key;
+										
+										if (content != null) {
+											for(File f : content) {
+												if (f.getName().endsWith(".jar")) {
+													processDeployment(cp, repo, f, DeploymentMode.CREATE);
+												}												
+											}
+										}
+										
+										while ((key = watcher.take()) != null) {
+											for(WatchEvent<?> event : key.pollEvents()) {
 												final WatchEvent<Path> ev = (WatchEvent<Path>)event;
 												
 												if (event.kind() == StandardWatchEventKinds.OVERFLOW) {
 													continue;
 												}
-												else if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
-													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.CREATE);
-												}
-												else if (event.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
-													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.MODIFY);
-												}
-												else if (event.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
-													processDeployment(cp, repo, ev.context().toFile(), DeploymentMode.DELETE);
+												else {
+													final File	f = ev.context().toFile();
+													
+													if (f.getName().endsWith(".jar")) {
+														if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
+															processDeployment(cp, repo, f, DeploymentMode.CREATE);
+														}
+														else if (event.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
+															processDeployment(cp, repo, f, DeploymentMode.MODIFY);
+														}
+														else if (event.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
+															processDeployment(cp, repo, f, DeploymentMode.DELETE);
+														}
+													}
 												}
 											}
+											key.reset();
 										}
 									} catch (InterruptedException | IOException exc) {
+										exc.printStackTrace();
 									}
 								});
-		
+
 		dir.toPath().register(watcher, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_DELETE, StandardWatchEventKinds.ENTRY_MODIFY);
 		t.setName(DEPLOYER_NAME);
 		t.setDaemon(true);
@@ -253,15 +283,15 @@ public class Application {
 					try {
 						cp.processConsoleInput(line);
 					} catch (CommandLineParametersException e) {
-						System.err.println(e.getLocalizedMessage());
+						owner.getLogger().message(Severity.error, e.getLocalizedMessage());
 					}
 				}
 				else {
-					System.err.println("Empty input, type command you wish or 'help'");
+					print("Empty input, type command you wish or 'help'");
 				}
 			}
 		} catch (IOException e) {
-			System.err.println(e.getLocalizedMessage());
+			owner.getLogger().message(Severity.error, e.getLocalizedMessage());
 		}
 	}
 
@@ -284,6 +314,10 @@ public class Application {
 			}
 		}
 		return false;
+	}
+	
+	private static void print(final String message) {
+		System.err.println(message);
 	}
 
 	private static class ApplicationArgParser extends ArgParser {
