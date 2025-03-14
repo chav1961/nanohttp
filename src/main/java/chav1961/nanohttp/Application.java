@@ -48,7 +48,6 @@ import chav1961.nanohttp.server.jmx.JmxManager;
 import chav1961.nanohttp.server.jmx.JmxManagerMBean;
 import chav1961.purelib.basic.ArgParser;
 import chav1961.purelib.basic.SubstitutableProperties;
-import chav1961.purelib.basic.SystemErrLoggerFacade;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.exceptions.CommandLineParametersException;
 import chav1961.purelib.basic.interfaces.LoggerFacade;
@@ -77,7 +76,7 @@ public class Application {
 
 			tempDir.mkdirs();			
 			if (!parsed.isTyped(ARG_MODE)) {
-				final LoggerFacade			logger = new SystemErrLoggerFacade();
+				final LoggerFacade			logger = LoggerFacade.Factory.newInstance(URI.create(LoggerFacade.LOGGER_SCHEME+":err:/"));
 				final NanoServiceWrapper	wrapper = NanoServiceBuilder.of(props).setTraceOn(parsed.getValue(ARG_DEBUG, boolean.class)).build(logger);
 				final CountDownLatch		latch = new CountDownLatch(1);
 				final ConsoleParser			cp = new ConsoleParser(wrapper, logger, wrapper.isTraceTurnedOn(), latch);

@@ -12,7 +12,6 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
-import chav1961.purelib.basic.NullLoggerFacade;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.Utils;
 import chav1961.purelib.basic.interfaces.LoggerFacade;
@@ -269,7 +268,7 @@ public class NanoServiceBuilder {
 	}
 
 	public NanoServiceWrapper build() throws IOException {
-		return build(new NullLoggerFacade());
+		return build(LoggerFacade.Factory.newInstance(URI.create(LoggerFacade.LOGGER_SCHEME+":null:/")));
 	}	
 	
 	public NanoServiceWrapper build(final LoggerFacade logger) throws IOException {
