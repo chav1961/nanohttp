@@ -21,7 +21,6 @@ import chav1961.purelib.basic.PureLibSettings;
 import chav1961.purelib.basic.SubstitutableProperties;
 import chav1961.purelib.basic.exceptions.ContentException;
 import chav1961.purelib.basic.exceptions.SyntaxException;
-import chav1961.purelib.fsys.FileSystemOnFile;
 import chav1961.purelib.fsys.interfaces.FileSystemInterface;
 
 public class NanoServiceWrapperTest {
@@ -94,7 +93,7 @@ public class NanoServiceWrapperTest {
 		final NanoServiceBuilder	bldr = NanoServiceBuilder.of(SubstitutableProperties.of(getClass().getResourceAsStream("/nanoservice.conf")));
 		
 		try(final NanoServiceWrapper 	wrapper = bldr.build(PureLibSettings.NULL_LOGGER);
-			final FileSystemInterface	child = new FileSystemOnFile(URI.create("file:./src/test/resources/child"))) {
+			final FileSystemInterface	child = FileSystemInterface.Factory.newInstance(URI.create("file:./src/test/resources/child"))) {
 			
 			wrapper.start();
 			wrapper.deploy("/inner", child);
